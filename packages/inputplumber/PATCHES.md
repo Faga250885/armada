@@ -13,3 +13,6 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   notes: AYN Thor Lite support
 - `patches/0004-fix-AyaneoHaptics-sleep-between-polls.patch`
   source: armada
+- `patches/0005-feat-Hardware-Support-Qualcomm-SSC-sensors.patch`
+  source: https://github.com/ShadowBlip/InputPlumber/pull/590
+  notes: Rebased on latest InputPlumber; adds the FastRPCDevice.Id polkit action the upstream policy test requires.
