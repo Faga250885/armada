@@ -1,0 +1,62 @@
+%global debug_package %{nil}
+
+Name:           lepton-guestos
+# Always update the version when you update the package
+Version:        1
+Release:        1%{?dist}.armada
+Summary:        Host side of Steam's Lepton Android compatibility tool
+License:        MIT
+URL:            https://github.com/armada-os/armada
+ExclusiveArch:  aarch64
+
+Source0:        guestos-android.erofs
+Source1:        usr-share-guestos-android.mount
+Source2:        steamvr
+Source3:        VkLayer_fossilize.json
+
+BuildRequires:  systemd-rpm-macros
+
+# Lepton drives rootless podman with pasta networking.
+Requires:       podman
+Requires:       catatonit
+Requires:       passt
+# Its launch scripts.
+Requires:       inotify-tools
+Requires:       attr
+Requires:       jq
+Requires:       util-linux
+Requires:       android-tools
+
+%description
+Mesa, the Fossilize layer and other files Lepton (Steam app 3029110) expects
+the OS to provide under /usr/share/guestos/android, plus the host tools and
+paths its scripts assume.
+
+%prep
+
+%build
+
+%install
+install -Dpm 0644 %{SOURCE0} %{buildroot}%{_datadir}/armada/lepton/guestos-android.erofs
+install -dm 0755 %{buildroot}%{_datadir}/guestos/android
+install -Dpm 0644 %{SOURCE1} %{buildroot}%{_unitdir}/usr-share-guestos-android.mount
+install -Dpm 0755 %{SOURCE2} %{buildroot}%{_bindir}/steamvr
+# Lepton reads layer IDs from any JSON under /usr/share/vulkan; the host loader
+# only scans *_layer.d, so it never tries to load this Android library.
+install -Dpm 0644 %{SOURCE3} %{buildroot}%{_datadir}/vulkan/guestos-android/VkLayer_fossilize.json
+# Lepton hardcodes Debian's adb path.
+install -dm 0755 %{buildroot}%{_prefix}/lib/android-sdk/platform-tools
+ln -s ../../../bin/adb %{buildroot}%{_prefix}/lib/android-sdk/platform-tools/adb
+
+%files
+%{_datadir}/armada/lepton/
+%dir %{_datadir}/guestos
+%dir %{_datadir}/guestos/android
+%{_unitdir}/usr-share-guestos-android.mount
+%{_bindir}/steamvr
+%{_datadir}/vulkan/guestos-android/
+%{_prefix}/lib/android-sdk/
+
+%changelog
+* Thu Oct 01 2026 Radical <radical@radical.fun> - 1-1
+- Initial package
