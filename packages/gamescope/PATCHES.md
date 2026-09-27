@@ -18,8 +18,6 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0007-expose-client-sampleable-formats.patch`
   source: armada
-- `patches/0008-fix-arm64-steam-night-mode.patch`
-  source: armada
 - `patches/0009-main-add-opt-in-force-vulkan-realtime.patch`
   source: armada
 - `patches/0010-color-fall-back-to-app-hdr-metadata-for-tonemapping.patch`
