@@ -587,6 +587,9 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0530-ASoC-qdsp6-release-AudioReach-graphs-across-system-suspend.patch`
   source: armada
   upstream: local
+- `patches/0532-hwmon-pwm-fan-optionally-run-the-fan-while-charging-in-s2idle.patch`
+  source: armada
+  upstream: local
 - `patches/0618-drm-msm-dp-dont-fail-audio-prepare-when-display-off.patch`
   source: https://github.com/ROCKNIX/distribution/pull/3187
   upstream: unknown
