@@ -23,6 +23,10 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: https://git.kernel.org/torvalds/c/2028280686f4fa78e2f1f6dede4b6c1fd782b9e3
   upstream: https://lore.kernel.org/r/20260903-fix-eliza-dsi-v1-1-3474a6c9f2e0@oss.qualcomm.com
   notes: Context of the struct msm_dsi_host hunk refreshed to apply after `0048`.
+- `patches/0048b-drm-msm-dsi-fix-pll-init-in-bonded-mode.patch`
+  source: https://git.kernel.org/torvalds/c/93c97bc8d85d5742d6f000d8bf3eeeb705bc6082
+  upstream: https://lore.kernel.org/r/20251027-topic-sm8x50-fix-dsi-bonded-v1-1-a477cd3f907d@linaro.org
+  notes: Reapplies the upstream bonded DSI PLL initialization fix for the Pocket S2 half screen regression on 7.2.6 after upstream revert `44784327815b`. Carried verbatim; upstream reverted the original fix for a non bonded DSI clock/divider regression.
 - `patches/0049-drm-msm-dpu-panel-opt-in-8bpc-dither.patch`
   source: armada
   upstream: local
