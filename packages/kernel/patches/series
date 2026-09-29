@@ -91,6 +91,7 @@
 0036_ASoC--qcom--sc8280xp-Add-support-for-Primary-I2S.patch
 0032-ASoC-codecs-aw88166-AYN-Products-Specific-modificati.patch
 0618-drm-msm-dp-dont-fail-audio-prepare-when-display-off.patch
+0619-drm-msm-map-submitqueue-priority-onto-high-low.patch
 
 # ============== LED / RGB ==============
 0030-leds-Add-driver-for-HEROIC-HTR3212.patch

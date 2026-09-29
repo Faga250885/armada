@@ -597,6 +597,9 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: https://github.com/ROCKNIX/distribution/pull/3187
   upstream: unknown
   notes: Imported unchanged from the linked ROCKNIX pull request.
+- `patches/0619-drm-msm-map-submitqueue-priority-onto-high-low.patch`
+  source: armada
+  upstream: local
 - `dts/qcs8550-ayaneo-pocketace.dts`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8550/linux/dts/qcom/qcs8550-ayaneo-pocketace.dts
 - `dts/qcs8550-ayaneo-pocket-common.dtsi`
