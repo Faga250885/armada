@@ -1,0 +1,101 @@
+From: virtudude <virtudude@protonmail.com>
+Subject: [PATCH] launcher: gamepad, second display and split APKs
+
+Applies to the launcher Steam installs (app 3029110).
+
+Mount Steam Input's virtual gamepads into the container and forward the
+hint that stops SDL from ignoring them. Mount a second compositor socket
+for the external display when one is named. Take the base APK's line from
+pm path, which lists every APK of an app installed from split APKs.
+
+---
+--- a/liblepton/mounting.sh
++++ b/liblepton/mounting.sh
+@@ -373,6 +373,10 @@
+     # Tell Mesa where to slurp up its shaders
+     #println "    setenv MESA_SHADER_CACHE_DIR /data/shaders" >> "${ZYGOTE_LAUNCH_RC}"
+     println "    setenv Steam3Master $(podman_subnet).1:57343" >> "${ZYGOTE_LAUNCH_RC}"
++    # SDL ignores Steam's virtual gamepad unless Steam's hint for it reaches the game
++    if [[ -n "${SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD:-}" ]]; then
++        println "    setenv SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD ${SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD}" >> "${ZYGOTE_LAUNCH_RC}"
++    fi
+ 
+     chmod 0644 "${ZYGOTE_LAUNCH_RC}"
+     podman_mount_entry "${ZYGOTE_LAUNCH_RC}" "/system/etc/init/hw/init.zygote64.rc" ro,U
+@@ -461,6 +465,14 @@
+         fi
+     done
+ 
++    # Steam Input presents every controller as a virtual pad; hand those to Android
++    local SYS_EV EV
++    for SYS_EV in /sys/devices/virtual/input/input*/event*; do
++        [[ "$(cat "${SYS_EV}/device/id/vendor" 2>/dev/null)" == "28de" ]] || continue
++        EV="/dev/input/${SYS_EV##*/}"
++        [[ -r "${EV}" ]] && podman_mount_entry "${EV}" "${EV}" rw
++    done
++
+     # By default, we do not allow writes to msg
+     local KMSG_MOUNT="/dev/null"
+     if [[ "${LEPTON_ALLOW_KMSG:-false}" != "false" ]]; then
+@@ -542,6 +554,9 @@
+ 
+     # Next, mounts for things like pulse, wayland, etc...
+     podman_mount_entry "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" "/waydroid/xdg/wayland-0" rw,U
++    if [[ -n "${ARMADA_EXT_WAYLAND_DISPLAY:-}" && -e "${XDG_RUNTIME_DIR}/${ARMADA_EXT_WAYLAND_DISPLAY}" ]]; then
++        podman_mount_entry "${XDG_RUNTIME_DIR}/${ARMADA_EXT_WAYLAND_DISPLAY}" "/waydroid/xdg/wayland-1" rw,U
++    fi
+     if ! is_sysbake; then
+         podman_mount_entry "${PULSE_RUNTIME_PATH}/native" "/waydroid/xdg/pulse/native" rw,U
+     fi
+--- a/liblepton/properties.sh
++++ b/liblepton/properties.sh
+@@ -130,6 +130,9 @@
+     # Only show the 2d screen if we're not baking and our app requests it.
+     if ! is_sysbake && app_wants_flatscreen; then
+         props_echo "waydroid.wayland_display=wayland-0"
++        if [[ -n "${ARMADA_EXT_WAYLAND_DISPLAY:-}" && -e "${XDG_RUNTIME_DIR}/${ARMADA_EXT_WAYLAND_DISPLAY}" ]]; then
++            props_echo "waydroid.wayland_display_ext=wayland-1"
++        fi
+         props_echo "waydroid.background_start=false"
+         props_echo "lepton.headless=false"
+     else
+--- a/images/rootfs_overlay/system/bin/cmd
++++ b/images/rootfs_overlay/system/bin/cmd
+@@ -10,7 +10,7 @@
+     cmd_real package list packages -3 -U | while IFS= read -r package_line; do
+         package=$(echo "$package_line" | cut -d' ' -f1 | cut -d: -f2)
+         for vulkan_layer in /vendor/enabled_vulkan_layers/*.so; do
+-            APP_PATH=$(pm path "$package")
++            APP_PATH=$(pm path "$package" | grep -m 1 "/base.apk$")
+             APP_PATH="${APP_PATH#package:}"
+             APP_PATH="${APP_PATH%/base.apk}"
+ 
+@@ -28,7 +28,7 @@
+     cmd_real package list packages -3 -U | while IFS= read -r package_line; do
+         package=$(echo "$package_line" | cut -d' ' -f1 | cut -d: -f2)
+         for vulkan_layer in /vendor/enabled_vulkan_layers/*.so; do
+-            APP_PATH=$(pm path "$package")
++            APP_PATH=$(pm path "$package" | grep -m 1 "/base.apk$")
+             APP_PATH="${APP_PATH#package:}"
+             APP_PATH="${APP_PATH%/base.apk}"
+ 
+@@ -121,7 +121,7 @@
+     rm -rf /data/media/0/Android/obb/${APP_ID};
+     mkdir -p /data/media/0/Android/obb
+ 
+-    APP_PATH="$(cmd_real package path ${APP_ID})"
++    APP_PATH="$(cmd_real package path ${APP_ID} | grep -m 1 "/base.apk$")"
+     APP_PATH="${APP_PATH#package:}"
+     APP_PATH="${APP_PATH%/base.apk}"
+ 
+--- a/images/rootfs_overlay/vendor/bin/fix_obb_symlink.sh
++++ b/images/rootfs_overlay/vendor/bin/fix_obb_symlink.sh
+@@ -2,7 +2,7 @@
+ 
+ APP_ID=$1
+ 
+-APP_PATH="$(pm path ${APP_ID} | sed "s/^package://g" | sed "s/\/base.apk$//g")";
++APP_PATH="$(pm path ${APP_ID} | grep -m 1 "/base.apk$" | sed "s/^package://g" | sed "s/\/base.apk$//g")";
+ 
+ local OBB_INNER_PATH="${APP_PATH}"
+ 

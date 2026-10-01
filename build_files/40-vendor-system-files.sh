@@ -10,6 +10,10 @@ update-desktop-database -q /usr/share/applications
 
 cp -a /packages/mesa-android/waydroid/vendor /usr/share/armada/waydroid/
 
+mkdir -p /usr/share/guestos
+cp -a /packages/lepton/android /usr/share/guestos/android
+install -Dm0644 /packages/lepton/launcher.patch /usr/share/armada/lepton/launcher.patch
+
 mesa_sqsh=/usr/share/fex-emu/RootFS/ArmadaMesa.sqsh
 install -Dm0644 /packages/mesa-x86/ArmadaMesa.sqsh "${mesa_sqsh}"
 # A separate rechunk component keeps Mesa-only updates from invalidating ArchLinux.sqsh.

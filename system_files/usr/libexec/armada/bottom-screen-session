@@ -40,6 +40,7 @@ unset GAMESCOPE_WAYLAND_DISPLAY GAMESCOPE_LIMITER_FILE
 
 exec "$dbus_run_session" \
     "$kwin_wayland" \
+    --socket armada-bottom \
     --x11-display "$DISPLAY" \
     --fullscreen \
     --no-lockscreen \

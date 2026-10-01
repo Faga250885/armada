@@ -65,6 +65,9 @@ FROM ${MESA_X86_REF} AS mesa-x86
 ARG EXTEST_REF
 FROM ${EXTEST_REF} AS extest
 
+ARG LEPTON_REF
+FROM ${LEPTON_REF} AS lepton
+
 ARG ARMADA_SPLASH_REF
 FROM ${ARMADA_SPLASH_REF} AS armada-splash
 
@@ -117,6 +120,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=mesa-x86,source=/,target=/packages/mesa-x86 \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
+    --mount=type=bind,from=lepton,source=/lepton,target=/packages/lepton \
     --mount=type=bind,from=armada-splash,source=/rpms,target=/packages/armada-splash \
     --mount=type=bind,from=armada-rgb,source=/rpms,target=/packages/armada-rgb \
     --mount=type=bind,from=umtp-responder,source=/rpms,target=/packages/umtp-responder \

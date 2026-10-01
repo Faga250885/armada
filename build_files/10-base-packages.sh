@@ -131,6 +131,9 @@ dnf5 -y install --setopt=install_weak_deps=False \
     libsmbclient \
     cifs-utils \
     waydroid \
+    android-tools \
+    inotify-tools \
+    patch \
     kscreen \
     konsole \
     qmlkonsole \

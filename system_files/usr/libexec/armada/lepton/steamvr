@@ -1,0 +1,10 @@
+#!/usr/bin/bash
+# Lepton asks the Steam Frame's SteamVR helper where the runtime lives.
+base="${XDG_STATE_HOME:-${HOME}/.local/state}/armada-lepton/steamvr"
+case "${1:-}" in
+    path) dir="${base}/runtime" ;;
+    logpath) dir="${base}/logs" ;;
+    configpath) dir="${base}/config" ;;
+    *) exit 1 ;;
+esac
+mkdir -p "${dir}" && printf '%s\n' "${dir}"

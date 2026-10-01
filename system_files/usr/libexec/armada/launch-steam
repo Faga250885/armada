@@ -18,6 +18,11 @@ if [[ ! -x "${steam_arm}" ]]; then
     exit 127
 fi
 
+# steam.sh records these; Steam restores them for compat tools, which
+# otherwise start with no PATH at all
+export SYSTEM_PATH="${PATH}"
+export SYSTEM_LD_LIBRARY_PATH="${LD_LIBRARY_PATH-}"
+
 steam_ld_path="${steam_arm_dir}"
 if [[ -d "${steam_shim_dir}" ]]; then
     steam_ld_path="${steam_ld_path}:${steam_shim_dir}"

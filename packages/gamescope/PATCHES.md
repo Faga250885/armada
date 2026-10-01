@@ -46,3 +46,5 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0022-mangoapp-keep-a-lease-client-off-the-shared-queue.patch`
   source: armada
+- `patches/0023-steamcompmgr-report-wayland-windows-to-steam.patch`
+  source: armada

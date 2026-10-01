@@ -1,0 +1,62 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+LEPTON_APPID=3029110
+patch_file=/usr/share/armada/lepton/launcher.patch
+steam_root="${HOME}/.local/share/Steam"
+tool="${XDG_DATA_HOME:-${HOME}/.local/share}/armada-lepton/tool"
+
+find_lepton() {
+    local library libraries=("${steam_root}")
+    local vdf="${steam_root}/steamapps/libraryfolders.vdf"
+    if [[ -f "${vdf}" ]]; then
+        while IFS= read -r library; do
+            libraries+=("${library}")
+        done < <(sed -n 's/^[[:space:]]*"path"[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "${vdf}")
+    fi
+    for library in "${libraries[@]}"; do
+        library="${library}/steamapps/common/Lepton"
+        if [[ -x "${library}/lepton" && -d "${library}/images/rootfs" && -d "${library}/sysbake" ]]; then
+            printf '%s\n' "${library}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! lepton="$(find_lepton)"; then
+    echo "armada-lepton: Steam's Lepton (app ${LEPTON_APPID}) is not installed" >&2
+    if [[ -p "${HOME}/.steam/steam.pipe" ]]; then
+        timeout 2 bash -c 'printf "steam://install/%s\n" "$1" > "$2"' _ \
+            "${LEPTON_APPID}" "${HOME}/.steam/steam.pipe" || true
+    fi
+    exit 1
+fi
+
+# The Android image and its baked data stay in Steam's copy; only the launcher
+# scripts are copied, so they can be patched.
+stamp="${lepton} $(< "${lepton}/version.txt") $(sha256sum < "${patch_file}")"
+if [[ "$(cat "${tool}/.stamp" 2>/dev/null || true)" != "${stamp}" ]]; then
+    rm -rf "${tool}.new"
+    mkdir -p "${tool}.new/images"
+    cp -a "${lepton}/lepton" "${lepton}/liblepton" "${lepton}/version.txt" "${tool}.new/"
+    cp -a "${lepton}/images/rootfs_overlay" "${lepton}/images/version.txt" "${tool}.new/images/"
+    ln -s "${lepton}/images/rootfs" "${tool}.new/images/rootfs"
+    ln -s "${lepton}/sysbake" "${lepton}/sysbake.xattrs" "${tool}.new/"
+    if ! patch --directory="${tool}.new" --strip=1 --fuzz=0 --no-backup-if-mismatch --quiet < "${patch_file}"; then
+        echo "armada-lepton: patches do not apply to Lepton $(< "${lepton}/version.txt")" >&2
+        exit 1
+    fi
+    printf '%s\n' "${stamp}" > "${tool}.new/.stamp"
+    rm -rf "${tool}"
+    mv "${tool}.new" "${tool}"
+fi
+
+export PATH="/usr/libexec/armada/lepton:${PATH:-/usr/local/bin:/usr/bin}"
+# Lepton only shows a window for apps that ask for one; its default is a headset.
+export APP_WANTS_FLATSCREEN="${APP_WANTS_FLATSCREEN:-true}"
+if [[ -z "${ARMADA_EXT_WAYLAND_DISPLAY+set}" && -S "${XDG_RUNTIME_DIR}/armada-bottom" ]]; then
+    export ARMADA_EXT_WAYLAND_DISPLAY=armada-bottom
+fi
+
+exec "${tool}/lepton" "$@"
