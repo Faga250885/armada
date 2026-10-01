@@ -31,7 +31,8 @@ mkdir -p out "${TREE}/vendor/lib64/hw" "${TREE}/vendor/lib64/egl"
 dnf -y install --setopt=install_weak_deps=False \
     meson ninja-build python3-mako python3-yaml python3-ply bison flex \
     cmake curl unzip xz patch pkgconf glslang python3-packaging \
-    gcc gcc-c++ binutils koji cpio erofs-utils git rpm-build systemd-rpm-macros
+    gcc gcc-c++ binutils koji cpio erofs-utils git rpm-build systemd-rpm-macros \
+    java-25-openjdk-headless
 
 cd /tmp
 curl --fail --location --retry 3 --remote-name "${NDK_URL}"
@@ -140,6 +141,23 @@ cat >/etc/rpm/macros.armada <<EOF
 %packager Armada
 %vendor Armada
 EOF
+
+# The device has no JVM, so smali runs as dex under the guest's ART.
+cd /tmp
+SMALI_URL=https://bitbucket.org/JesusFreke/smali/downloads
+curl --fail --location --retry 3 -o smali.jar "${SMALI_URL}/smali-${SMALI_VERSION}.jar"
+curl --fail --location --retry 3 -o baksmali.jar "${SMALI_URL}/baksmali-${SMALI_VERSION}.jar"
+curl --fail --location --retry 3 -o r8.jar \
+    "https://dl.google.com/android/maven2/com/android/tools/r8/${R8_VERSION}/r8-${R8_VERSION}.jar"
+sha256sum --check --strict <<EOF
+${SMALI_SHA256}  smali.jar
+${BAKSMALI_SHA256}  baksmali.jar
+${R8_SHA256}  r8.jar
+EOF
+for t in smali baksmali; do
+    java -cp r8.jar com.android.tools.r8.D8 --release --min-api "${ANDROID_API}" \
+        --output ~/rpmbuild/SOURCES/"${t}.dex.jar" "${t}.jar"
+done
 
 cp /work/files/* ~/rpmbuild/SOURCES/
 cp "/work/${NAME}.spec" ~/rpmbuild/SPECS/

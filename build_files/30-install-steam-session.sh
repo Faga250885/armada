@@ -35,7 +35,7 @@ dnf5 -y install --setopt=install_weak_deps=False /packages/armada-rgb/*.rpm
 
 dnf5 -y install --setopt=install_weak_deps=False /packages/jupiter-hw-support/*.rpm
 
-dnf5 -y install --setopt=install_weak_deps=False /packages/lepton/lepton-guestos-*.rpm
+dnf5 -y install --setopt=install_weak_deps=False /packages/lepton/lepton-{guestos,armada}-[0-9]*.rpm
 python3 -c 'import os,sys; os.setxattr(sys.argv[1],"user.component",b"lepton")' \
     /usr/share/armada/lepton/guestos-android.erofs
 
