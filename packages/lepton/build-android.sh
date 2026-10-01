@@ -32,7 +32,14 @@ run() {
         lepton-builder /bin/bash -lc "source ~/.bashrc; set -eo pipefail; $1"
 }
 
-[ -f "${out}/.repo/manifest.xml" ] || run "./.buildscripts/update_repositories.sh --ci"
+# Valve's patches go in with git am: once, on the clean tree, before anything
+# else touches it. Applying them a second time conflicts.
+if [ ! -f "${out}/.valve-patches-applied" ]; then
+    run "./.buildscripts/update_repositories.sh --ci"
+    run "cd output && ../.buildscripts/copy_vendored_projects.sh >/dev/null &&
+         source build/envsetup.sh && apply-waydroid-patches"
+    touch "${out}/.valve-patches-applied"
+fi
 
 git -C "${image}/android_hardware_waydroid" checkout -q -- .
 git -C "${image}/android_hardware_waydroid" apply "${PKG}/patches/android-0001-"*.patch
@@ -40,7 +47,7 @@ git -C "${out}/hardware/interfaces" checkout -q -- .
 git -C "${out}/hardware/interfaces" apply "${PKG}/patches/android-0002-"*.patch
 
 run "cd output && ../.buildscripts/copy_vendored_projects.sh >/dev/null &&
-     source build/envsetup.sh && apply-waydroid-patches &&
+     source build/envsetup.sh &&
      lunch lineage_lepton_arm64_only-userdebug &&
      make hwcomposer.waydroid libhwc2on1adapter -j\$(nproc)"
 

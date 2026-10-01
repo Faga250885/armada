@@ -1,13 +1,1 @@
-#!/usr/bin/bash
-# Lepton hardcodes this path and installs one APK. An app bundle is a base APK
-# plus split APKs, kept in splits/ beside it and installed as one session.
-args=("$@")
-n=${#args[@]}
-if (( n >= 3 )) && [[ ${args[n-3]} == install && ${args[n-2]} == -g ]]; then
-    apk=${args[n-1]}
-    splits=("$(dirname -- "${apk}")"/splits/*.apk)
-    if [[ -e ${splits[0]} ]]; then
-        exec /usr/bin/adb "${args[@]:0:n-3}" install-multiple -g "${apk}" "${splits[@]}"
-    fi
-fi
-exec /usr/bin/adb "$@"
+/usr/bin/adb

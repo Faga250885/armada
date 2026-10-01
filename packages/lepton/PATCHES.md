@@ -4,7 +4,7 @@
 Steam installs. `android-*.patch` are the source of `prebuilt/`; they apply to
 Valve's Android tree for the tag in BASE.env (`build-android.sh`).
 
-- `patches/launcher-0001-gamepad-second-display-and-split-apks.patch`
+- `patches/launcher-0001-gamepad-and-second-display.patch`
   source: armada
 - `patches/android-0001-hwcomposer-add-an-external-display.patch`
   source: armada
