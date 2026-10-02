@@ -62,6 +62,16 @@ cp /work/patches/0002-add-a830-chip-id.patch $HOME/rpmbuild/SOURCES/
 sed -i "/^Patch9001:/a Patch9002:       0002-add-a830-chip-id.patch" "$SPEC"
 cp /work/patches/0003-ir3-disable-bindless-ubo-const-lowering.patch $HOME/rpmbuild/SOURCES/
 sed -i "/^Patch9002:/a Patch9003:       0003-ir3-disable-bindless-ubo-const-lowering.patch" "$SPEC"
+cp /work/patches/0004-tu-emulate-mesh-shaders.patch $HOME/rpmbuild/SOURCES/
+sed -i "/^Patch9003:/a Patch9004:       0004-tu-emulate-mesh-shaders.patch" "$SPEC"
+cp /work/patches/0005-ir3-support-half-wave-subgroups.patch $HOME/rpmbuild/SOURCES/
+sed -i "/^Patch9004:/a Patch9005:       0005-ir3-support-half-wave-subgroups.patch" "$SPEC"
+cp /work/patches/0006-ir3-sanitize-a8xx-cube-map-directions.patch $HOME/rpmbuild/SOURCES/
+sed -i "/^Patch9005:/a Patch9006:       0006-ir3-sanitize-a8xx-cube-map-directions.patch" "$SPEC"
+cp /work/patches/0007-tu-invalidate-a8xx-bindless-descriptors.patch $HOME/rpmbuild/SOURCES/
+sed -i "/^Patch9006:/a Patch9007:       0007-tu-invalidate-a8xx-bindless-descriptors.patch" "$SPEC"
+cp /work/patches/0008-freedreno-enable-a740-ubwc-hint.patch $HOME/rpmbuild/SOURCES/
+sed -i "/^Patch9007:/a Patch9008:       0008-freedreno-enable-a740-ubwc-hint.patch" "$SPEC"
 sed -i "/^%build$/i %global build_cflags %{build_cflags} ${ARMADA_MARCH}" "$SPEC"
 sed -i "/^%build$/i %global build_cxxflags %{build_cxxflags} ${ARMADA_MARCH}" "$SPEC"
 
