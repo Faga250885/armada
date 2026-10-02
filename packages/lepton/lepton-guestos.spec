@@ -1,4 +1,7 @@
 %global debug_package %{nil}
+# The overlay holds Android libraries; their sonames are not host dependencies.
+%global __requires_exclude_from ^%{_datadir}/steam/compatibilitytools.d/lepton-armada/overlay/.*$
+%global __provides_exclude_from ^%{_datadir}/steam/compatibilitytools.d/lepton-armada/overlay/.*$
 
 Name:           lepton-guestos
 # Always update the version when you update the package
@@ -17,7 +20,7 @@ Source4:        lepton-armada
 Source5:        compatibilitytool.vdf
 Source6:        toolmanifest.vdf
 Source7:        launcher.patch
-Source8:        lineage-system.rc
+Source8:        overlay.tar
 
 BuildRequires:  systemd-rpm-macros
 
@@ -56,16 +59,16 @@ install -Dpm 0644 %{SOURCE0} %{buildroot}%{_datadir}/armada/lepton/guestos-andro
 install -dm 0755 %{buildroot}%{_datadir}/guestos/android
 install -Dpm 0644 %{SOURCE1} %{buildroot}%{_unitdir}/usr-share-guestos-android.mount
 install -Dpm 0755 %{SOURCE2} %{buildroot}%{_bindir}/steamvr
-# Lepton reads layer IDs from any JSON under /usr/share/vulkan; the host loader
-# only scans *_layer.d, so it never tries to load this Android library.
+# Lepton reads layer IDs from any JSON under /usr/share/vulkan; the host loader only scans *_layer.d.
 install -Dpm 0644 %{SOURCE3} %{buildroot}%{_datadir}/vulkan/guestos-android/VkLayer_fossilize.json
 # Lepton hardcodes Debian's adb path.
 install -dm 0755 %{buildroot}%{_prefix}/lib/android-sdk/platform-tools
 ln -s ../../../bin/adb %{buildroot}%{_prefix}/lib/android-sdk/platform-tools/adb
 install -Dpm 0755 %{SOURCE4} %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada/lepton
 install -Dpm 0644 -t %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada %{SOURCE5} %{SOURCE6} %{SOURCE7}
-install -Dpm 0644 %{SOURCE8} \
-    %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada/overlay/system/etc/init/lineage-system.rc
+# Android 11 only, so these reach lepton-armada's copy and not the directory every Lepton mounts.
+install -dm 0755 %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada/overlay
+tar -C %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada/overlay -xf %{SOURCE8}
 
 %files
 %{_datadir}/armada/lepton/

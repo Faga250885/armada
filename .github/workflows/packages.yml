@@ -55,7 +55,7 @@ jobs:
             ref="${repo}/${pkg}:${hash}"
 
             case "${pkg}" in
-              mesa-android|lepton|lepton-android|mesa-x86) runner=ubuntu-24.04 ;;
+              mesa-android|lepton|mesa-x86) runner=ubuntu-24.04 ;;
               *)                            runner=ubuntu-24.04-arm ;;
             esac
 

@@ -1,9 +1,16 @@
 # Patches
 
 `launcher-*.patch` apply at first launch to a per-user copy of the launcher
-scripts Steam installs (app 3029110).
+scripts Steam installs (app 3029110). `android-*.patch` are the source of
+`prebuilt/`: they apply to Valve's Android tree for the tag in BASE.env, 0001
+to its `android_hardware_waydroid` and 0002 to `hardware/interfaces`
+(`build-android.sh`).
 
 - `patches/launcher-0001-pass-steam-input-gamepads-to-android.patch`
   source: armada
 - `patches/launcher-0002-second-display.patch`
+  source: armada
+- `patches/android-0001-hwcomposer-add-an-external-display.patch`
+  source: armada
+- `patches/android-0002-hwc2on1adapter-set-displays-the-client-has-not-revalidated.patch`
   source: armada

@@ -67,6 +67,13 @@ cat >/etc/rpm/macros.armada <<EOF
 EOF
 
 cat /work/patches/launcher-*.patch >~/rpmbuild/SOURCES/launcher.patch
+sha256sum --check --strict <<SUMS
+${HWCOMPOSER_SHA256}  /work/prebuilt/vendor/lib64/hw/hwcomposer.waydroid.so
+${HWC2ON1ADAPTER_SHA256}  /work/prebuilt/vendor/lib64/libhwc2on1adapter.so
+SUMS
+mkdir /tmp/overlay
+cp -a /work/overlay/. /work/prebuilt/. /tmp/overlay/
+tar -C /tmp/overlay -cf ~/rpmbuild/SOURCES/overlay.tar .
 cp /work/files/* ~/rpmbuild/SOURCES/
 cp "/work/${NAME}.spec" ~/rpmbuild/SPECS/
 rpmbuild -bb --target aarch64 ~/rpmbuild/SPECS/"${NAME}".spec

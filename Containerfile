@@ -62,9 +62,6 @@ FROM ${MESA_ANDROID_REF} AS mesa-android
 ARG LEPTON_REF
 FROM ${LEPTON_REF} AS lepton
 
-ARG LEPTON_ANDROID_REF
-FROM ${LEPTON_ANDROID_REF} AS lepton-android
-
 ARG MESA_X86_REF
 FROM ${MESA_X86_REF} AS mesa-x86
 
@@ -122,7 +119,6 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=jupiter-hw-support,source=/rpms,target=/packages/jupiter-hw-support \
     --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=lepton,source=/rpms,target=/packages/lepton \
-    --mount=type=bind,from=lepton-android,source=/,target=/packages/lepton-android \
     --mount=type=bind,from=mesa-x86,source=/,target=/packages/mesa-x86 \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
     --mount=type=bind,from=armada-splash,source=/rpms,target=/packages/armada-splash \

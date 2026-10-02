@@ -1,8 +1,15 @@
 #!/usr/bin/bash
-# Runs in the Ubuntu base of Valve's Android builder, on x86_64 like the tree's host tools.
+# Rebuilds prebuilt/ from Valve's Android tree. Run by hand on an x86_64 host
+# with podman and about 60 GB free; CI only checks the result's hashes.
 set -euxo pipefail
 
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 source ./BASE.env
+
+if [ ! -f /run/.containerenv ]; then
+    exec podman run --rm --platform linux/amd64 -v "${PWD}:/work:Z" -w /work \
+        "${ANDROID_BUILDER_IMAGE}" ./build-android.sh
+fi
 
 export DEBIAN_FRONTEND=noninteractive USER=root
 apt-get -qq update
@@ -25,18 +32,16 @@ run "./.buildscripts/update_repositories.sh --ci"
 run "cd output && ../.buildscripts/copy_vendored_projects.sh >/dev/null &&
      source build/envsetup.sh && apply-waydroid-patches"
 
-git -C "${image}/android_hardware_waydroid" apply /work/patches/0001-*.patch
-git -C "${image}/output/hardware/interfaces" apply /work/patches/0002-*.patch
+git -C "${image}/android_hardware_waydroid" apply /work/patches/android-0001-*.patch
+git -C "${image}/output/hardware/interfaces" apply /work/patches/android-0002-*.patch
 
 run "cd output && ../.buildscripts/copy_vendored_projects.sh >/dev/null &&
      source build/envsetup.sh &&
      lunch lineage_lepton_arm64_only-userdebug &&
      make hwcomposer.waydroid libhwc2on1adapter -j\$(nproc)"
 
-df -h /tmp
-
 product="${image}/output/out/target/product/lepton_arm64_only"
-rm -rf out
-install -Dm0644 "${product}/vendor/lib64/hw/hwcomposer.waydroid.so" -t out/vendor/lib64/hw
-install -Dm0644 "${product}/vendor/lib64/libhwc2on1adapter.so" -t out/vendor/lib64
-cp -a android/. out/
+install -Dm0644 "${product}/vendor/lib64/hw/hwcomposer.waydroid.so" -t prebuilt/vendor/lib64/hw
+install -Dm0644 "${product}/vendor/lib64/libhwc2on1adapter.so" -t prebuilt/vendor/lib64
+# After a deliberate change, update the hashes in BASE.env.
+sha256sum prebuilt/vendor/lib64/hw/hwcomposer.waydroid.so prebuilt/vendor/lib64/libhwc2on1adapter.so

@@ -54,7 +54,7 @@ under `armada/buildcache/`, so one package's cache can be expired or purged
 without disturbing the others.
 
 Most packages build natively on `ubuntu-24.04-arm`. `mesa-android`,
-`lepton`, `lepton-android` and `mesa-x86` build on `ubuntu-24.04`: they
+`lepton` and `mesa-x86` build on `ubuntu-24.04`: they
 cross-compile Android arm64 and x86 targets from an x86_64 host, and emulating
 that would be far too slow. Only the runner differs, but the stages are built
 the same way.

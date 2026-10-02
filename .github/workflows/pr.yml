@@ -68,7 +68,7 @@ jobs:
             # These need an x86_64 host, so they cannot build on the arm64
             # runner that builds the image.
             case "${pkg}" in
-              mesa-android|lepton|lepton-android|mesa-x86) target=cross ;;
+              mesa-android|lepton|mesa-x86) target=cross ;;
               *)                            target=native ;;
             esac
             entry="$(jq -c -n --arg p "${pkg}" --arg h "${hash}" '{package:$p, hash:$h}')"
