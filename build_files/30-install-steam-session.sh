@@ -38,8 +38,7 @@ dnf5 -y install --setopt=install_weak_deps=False /packages/jupiter-hw-support/*.
 dnf5 -y install --setopt=install_weak_deps=False /packages/lepton/lepton-{guestos,armada}-[0-9]*.rpm
 python3 -c 'import os,sys; os.setxattr(sys.argv[1],"user.component",b"lepton")' \
     /usr/share/armada/lepton/guestos-android.erofs
-# Built for Android 11 only, so they go in lepton-armada's copy of Lepton and not
-# the directory every Lepton mounts.
+# Android 11 binaries: lepton-armada's copy only, not the directory every Lepton mounts.
 cp -a /packages/lepton-android/. /usr/share/steam/compatibilitytools.d/lepton-armada/overlay/
 
 # Patched protontricks: Ships with https://github.com/Matoking/protontricks/pull/503

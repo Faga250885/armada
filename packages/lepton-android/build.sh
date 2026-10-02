@@ -1,8 +1,5 @@
 #!/usr/bin/bash
-# Builds two display libraries from Valve's Android tree, patched to give
-# Android a second display. Runs in the Ubuntu image Valve's own builder starts
-# from, on x86_64: the tree's host tools exist for nothing else. Needs about
-# 85 GB of scratch, nearly all of it the source checkout.
+# Runs in the Ubuntu base of Valve's Android builder, on x86_64 like the tree's host tools.
 set -euxo pipefail
 
 source ./BASE.env

@@ -27,6 +27,10 @@ case "${pkg}" in
         platform=linux/amd64
         source "${pkg}/BASE.env"
         image="${GUEST_BUILDER_IMAGE}" ;;
+    lepton-android)
+        platform=linux/amd64
+        source "${pkg}/BASE.env"
+        image="${ANDROID_BUILDER_IMAGE}" ;;
     # ccache opt-in: CI persists it in a cache mount, dev builds keep it
     # package-local.
     kernel|mesa)

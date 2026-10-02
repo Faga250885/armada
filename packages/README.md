@@ -57,5 +57,4 @@ Most packages build natively on `ubuntu-24.04-arm`. `mesa-android`,
 `lepton`, `lepton-android` and `mesa-x86` build on `ubuntu-24.04`: they
 cross-compile Android arm64 and x86 targets from an x86_64 host, and emulating
 that would be far too slow. Only the runner differs, but the stages are built
-the same way. `lepton-android` checks out an Android source tree and needs
-about 85 GB of disk while it builds.
+the same way.

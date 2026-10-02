@@ -33,9 +33,13 @@ if ! lepton="$(find_lepton)"; then
     exit 1
 fi
 
-# The Android image and its baked data stay in Steam's copy; only the launcher
-# scripts are copied, so they can be patched.
-stamp="${lepton} $(< "${lepton}/version.txt") $(find "${here}" -type f -exec sha256sum {} + | sort | sha256sum)"
+# Simultaneous first launches would otherwise build the copy on top of each other.
+mkdir -p "${tool%/*}"
+exec {lock}>"${tool%/*}/.lock"
+flock "${lock}"
+
+# Only the launcher scripts are copied; the Android image stays in Steam's install.
+stamp="${lepton} $(< "${lepton}/version.txt") $(< "${lepton}/images/version.txt") $(find "${here}" -type f -exec sha256sum {} + | sort | sha256sum)"
 if [[ "$(cat "${tool}/.stamp" 2>/dev/null || true)" != "${stamp}" ]]; then
     rm -rf "${tool}.new"
     mkdir -p "${tool}.new/images"
@@ -52,6 +56,7 @@ if [[ "$(cat "${tool}/.stamp" 2>/dev/null || true)" != "${stamp}" ]]; then
     rm -rf "${tool}"
     mv "${tool}.new" "${tool}"
 fi
+exec {lock}>&-
 
 if [[ -z "${ARMADA_EXT_WAYLAND_DISPLAY+set}" && -S "${XDG_RUNTIME_DIR}/gamescope-secondary" ]]; then
     export ARMADA_EXT_WAYLAND_DISPLAY=gamescope-secondary

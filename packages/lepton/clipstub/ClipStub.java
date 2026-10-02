@@ -4,9 +4,7 @@ import android.os.Looper;
 import android.os.Parcel;
 import android.os.RemoteException;
 
-// Lepton's Android starts no clipboard service, so ClipboardManager is null
-// and anything that touches it at startup (SDL's activity) dies. This is an
-// empty clipboard registered under the service's name.
+// Lepton's Android 11 starts no clipboard service, and SDL's activity dies on the null manager.
 public class ClipStub extends Binder {
     private static final String DESCRIPTOR = "android.content.IClipboard";
 

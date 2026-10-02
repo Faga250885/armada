@@ -17,6 +17,7 @@ Source4:        lepton-armada
 Source5:        compatibilitytool.vdf
 Source6:        toolmanifest.vdf
 Source7:        launcher.patch
+Source8:        lineage-system.rc
 
 BuildRequires:  systemd-rpm-macros
 
@@ -63,7 +64,8 @@ install -dm 0755 %{buildroot}%{_prefix}/lib/android-sdk/platform-tools
 ln -s ../../../bin/adb %{buildroot}%{_prefix}/lib/android-sdk/platform-tools/adb
 install -Dpm 0755 %{SOURCE4} %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada/lepton
 install -Dpm 0644 -t %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada %{SOURCE5} %{SOURCE6} %{SOURCE7}
-install -dm 0755 %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada/overlay
+install -Dpm 0644 %{SOURCE8} \
+    %{buildroot}%{_datadir}/steam/compatibilitytools.d/lepton-armada/overlay/system/etc/init/lineage-system.rc
 
 %files
 %{_datadir}/armada/lepton/

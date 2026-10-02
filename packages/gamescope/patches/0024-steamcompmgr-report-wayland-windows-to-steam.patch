@@ -8,16 +8,16 @@ game whose only window is an xdg-shell toplevel never leaves the launch
 spinner, although the window already carries the right appid.
 
 Report mapped xdg-shell windows that have an appid. They have no X11 id,
-so they are listed with the top bit set on their xdg id, and that id is
-honoured in GAMESCOPECTRL_BASELAYER_WINDOW. Record the client pid for the
-window triplet.
+so they are listed with the top bit set on their xdg id. The same id is
+published in GAMESCOPE_FOCUSED_WINDOW and honoured in
+GAMESCOPECTRL_BASELAYER_WINDOW. Record the client pid for the window
+triplet.
 
 ---
 diff --git a/src/steamcompmgr.cpp b/src/steamcompmgr.cpp
-index d90a869..efb17e6 100644
 --- a/src/steamcompmgr.cpp
 +++ b/src/steamcompmgr.cpp
-@@ -4392,6 +4392,16 @@ static bool win_treat_as_per_window( steamcompmgr_win_t *w, gamescope::VirtualCo
+@@ -4401,6 +4401,16 @@ static bool win_treat_as_per_window( ste
  static void
  handle_desktop_window(steamcompmgr_win_t *w);
  
@@ -34,7 +34,7 @@ index d90a869..efb17e6 100644
  static bool
  pick_primary_focus_and_override(
  	focus_t *out,
-@@ -4414,10 +4424,11 @@ pick_primary_focus_and_override(
+@@ -4423,10 +4433,11 @@ pick_primary_focus_and_override(
  			{
  				for ( steamcompmgr_win_t *focusable_window : vecPossibleFocusWindows )
  				{
@@ -48,7 +48,7 @@ index d90a869..efb17e6 100644
  					{
  						focus = focusable_window;
  						localGameFocused = true;
-@@ -5217,14 +5228,17 @@ determine_and_apply_focus( global_focus_t *pFocus )
+@@ -5226,14 +5237,17 @@ determine_and_apply_focus( global_focus_
  
  	for ( steamcompmgr_win_t *focusable_window : vecPossibleFocusWindows )
  	{
@@ -69,7 +69,7 @@ index d90a869..efb17e6 100644
  			continue;
  
  		unsigned int unAppID = focusable_window->appID;
-@@ -5245,7 +5259,7 @@ determine_and_apply_focus( global_focus_t *pFocus )
+@@ -5254,7 +5268,7 @@ determine_and_apply_focus( global_focus_
  		}
  
  		// list of [window, appid, pid] triplets
@@ -78,11 +78,19 @@ index d90a869..efb17e6 100644
  		focusable_windows.push_back( focusable_window->appID );
  		focusable_windows.push_back( focusable_window->pid );
  	}
+@@ -5534,7 +5548,7 @@ determine_and_apply_focus( global_focus_
+ 
+ 	if ( pFocus->focusWindow )
+ 	{
+-		focusedWindow = (unsigned long)pFocus->focusWindow->id();
++		focusedWindow = steam_window_id( pFocus->focusWindow );
+ 		focusedBaseAppId = pFocus->focusWindow->appID;
+ 		// A focus window does not guarantee an input focus window.
+ 		if ( pFocus->inputFocusWindow )
 diff --git a/src/wlserver.cpp b/src/wlserver.cpp
-index 4cde46b..35b6864 100644
 --- a/src/wlserver.cpp
 +++ b/src/wlserver.cpp
-@@ -2541,6 +2541,7 @@ wlserver_xdg_surface_info* waylandy_type_surface_new(struct wl_client *client, s
+@@ -2541,6 +2541,7 @@ wlserver_xdg_surface_info* waylandy_type
  	{
  		pid_t nPid = 0;
  		wl_client_get_credentials( client, &nPid, nullptr, nullptr );

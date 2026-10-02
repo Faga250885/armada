@@ -1,15 +1,12 @@
 #!/usr/bin/bash
 # Runs inside the builder container. See ../build-local.sh for the contract.
-#
-# Builds on x86_64 like mesa-android, whose Mesa build it reuses. The RPMs carry
-# no host binaries, so they package for aarch64 here too.
+# x86_64 like mesa-android; the RPMs hold no host binaries, so they target aarch64.
 set -euxo pipefail
 
-# The NDK pin comes from mesa-android; ANDROID_API from this package wins.
-set -a
+# mesa-android's build script downloads the NDK its BASE.env pins.
 source /src/mesa-android/BASE.env
+export NDK_VERSION NDK_SHA256
 source ./BASE.env
-set +a
 
 NAME=lepton-guestos
 TREE=/tmp/guestos-android
@@ -60,7 +57,6 @@ install -Dm0644 armada-clipstub.jar "${TREE}/system/framework/armada-clipstub.ja
 # Lepton bind-mounts each file in the tree over the same path in its container.
 cp -a /work/android/. "${TREE}/"
 
-# lz4, no zstd :(
 mkdir -p ~/rpmbuild/SOURCES ~/rpmbuild/SPECS
 mkfs.erofs -zlz4hc,12 -Eztailpacking ~/rpmbuild/SOURCES/guestos-android.erofs "${TREE}"
 

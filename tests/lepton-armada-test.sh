@@ -73,15 +73,37 @@ done
 run run
 [[ "$(<"$tmp/result")" == $'run\ngamescope-secondary' ]]
 
-# A Lepton update or a changed tool directory rebuilds the copy.
+# A Lepton update, an image update or a changed tool directory rebuilds the copy.
 printf 'v2\n' >"$lepton/version.txt"
 run run
 [[ ! -e "$derived/marker" ]]
+touch "$derived/marker"
+printf 'v2\n' >"$lepton/images/version.txt"
+run run
+[[ ! -e "$derived/marker" ]]
+[[ "$(<"$derived/images/version.txt")" == v2 ]]
 touch "$derived/marker"
 printf 'newer library\n' >"$tool_dir/overlay/vendor/lib64/display.so"
 run run
 [[ ! -e "$derived/marker" ]]
 [[ "$(<"$derived/images/rootfs_overlay/vendor/lib64/display.so")" == 'newer library' ]]
+
+# Simultaneous cold launches all succeed and leave Steam's install alone.
+rm -rf "$tmp/data"
+pids=()
+for n in 1 2 3 4; do
+    env HOME="$tmp/home" XDG_DATA_HOME="$tmp/data" XDG_RUNTIME_DIR="$tmp/run" RESULT="$tmp/result-$n" \
+        "$tool_dir/lepton" run &
+    pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+    wait "$pid"
+done
+for n in 1 2 3 4; do
+    [[ -s "$tmp/result-$n" ]]
+done
+[[ ! -e "$lepton/images/rootfs/rootfs" && ! -L "$lepton/images/rootfs/rootfs" ]]
+[[ "$(<"$derived/liblepton/mounting.sh")" == $'first\nadded\nsecond' ]]
 
 # A launcher the patch no longer fits must not run unpatched.
 printf 'changed upstream\n' >"$lepton/liblepton/mounting.sh"
