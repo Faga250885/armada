@@ -215,8 +215,8 @@ env \
     DISPLAY=:2 \
     GAMESCOPE_WAYLAND_DISPLAY=gamescope-1 \
     "$BOTTOM_READY"
-[[ "$(readlink "$tmp/runtime/secondary-gamescope")" == gamescope-1 ]]
-[[ "$(<"$tmp/runtime/armada-bottom-env")" == $'DISPLAY=:2\nWAYLAND_DISPLAY=secondary-gamescope\nGAMESCOPE_WAYLAND_DISPLAY=secondary-gamescope' ]]
+[[ "$(readlink "$tmp/runtime/gamescope-secondary")" == gamescope-1 ]]
+[[ "$(<"$tmp/runtime/armada-bottom-env")" == $'DISPLAY=:2\nWAYLAND_DISPLAY=gamescope-secondary\nGAMESCOPE_WAYLAND_DISPLAY=gamescope-secondary' ]]
 [[ "$(<"$tmp/runtime/sleep-args")" == infinity ]]
 
 client_env="$tmp/client-env"
@@ -226,7 +226,7 @@ env \
     WAYLAND_DISPLAY=outer-wayland \
     GAMESCOPE_WAYLAND_DISPLAY=gamescope-0 \
     "$RUN_BOTTOM" -- bash -c 'printf "%s\n" "$DISPLAY" "$WAYLAND_DISPLAY" "$GAMESCOPE_WAYLAND_DISPLAY" "$1"' _ arg >"$client_env"
-[[ "$(<"$client_env")" == $':2\nsecondary-gamescope\nsecondary-gamescope\narg' ]]
+[[ "$(<"$client_env")" == $':2\ngamescope-secondary\ngamescope-secondary\narg' ]]
 
 # Without the bottom gamescope a client must not fall through to an inherited display.
 if env XDG_RUNTIME_DIR="$tmp/empty-runtime" DISPLAY=outer-x11 \
@@ -251,21 +251,21 @@ env \
     XDG_RUNTIME_DIR="$tmp/runtime" \
     GAMESCOPE_WAYLAND_DISPLAY=gamescope-0 \
     "$LAUNCH_STEAM"
-[[ "$(readlink "$tmp/runtime/primary-gamescope")" == gamescope-0 ]]
+[[ "$(readlink "$tmp/runtime/gamescope-primary")" == gamescope-0 ]]
 # Steam started from a client of another gamescope must not repoint it.
 env \
     STEAM_ROOT="$tmp/steam" \
     XDG_RUNTIME_DIR="$tmp/runtime" \
-    GAMESCOPE_WAYLAND_DISPLAY=secondary-gamescope \
+    GAMESCOPE_WAYLAND_DISPLAY=gamescope-secondary \
     "$LAUNCH_STEAM" --desktop
-[[ "$(readlink "$tmp/runtime/primary-gamescope")" == gamescope-0 ]]
+[[ "$(readlink "$tmp/runtime/gamescope-primary")" == gamescope-0 ]]
 
 grep -Fxq 'Wants=armada-bottom-gamescope.service' "$SESSION_DROPIN"
-grep -Fxq 'ExecStopPost=/usr/bin/rm -f %t/primary-gamescope' "$SESSION_DROPIN"
+grep -Fxq 'ExecStopPost=/usr/bin/rm -f %t/gamescope-primary' "$SESSION_DROPIN"
 grep -Fxq 'PartOf=gamescope-session-plus@steam.service' "$GAMESCOPE_SERVICE"
 grep -Fxq 'ExecCondition=/usr/libexec/armada/bottom-gamescope --supported' "$GAMESCOPE_SERVICE"
 grep -Fxq 'ExecStart=/usr/libexec/armada/bottom-gamescope' "$GAMESCOPE_SERVICE"
-grep -Fxq 'ExecStopPost=/usr/bin/rm -f %t/armada-bottom-env %t/secondary-gamescope' "$GAMESCOPE_SERVICE"
+grep -Fxq 'ExecStopPost=/usr/bin/rm -f %t/armada-bottom-env %t/gamescope-secondary' "$GAMESCOPE_SERVICE"
 grep -Fxq 'Restart=always' "$GAMESCOPE_SERVICE"
 
 # A gamescope restart must take Plasma with it; KWin outlives a dead X display.

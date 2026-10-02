@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # gamescope picks its own display names and exits when this child does.
-ln -sfn "$GAMESCOPE_WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR/secondary-gamescope"
+ln -sfn "$GAMESCOPE_WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR/gamescope-secondary"
 env_file="$XDG_RUNTIME_DIR/armada-bottom-env"
-printf '%s\n' "DISPLAY=$DISPLAY" WAYLAND_DISPLAY=secondary-gamescope GAMESCOPE_WAYLAND_DISPLAY=secondary-gamescope >"$env_file.new"
+printf '%s\n' "DISPLAY=$DISPLAY" WAYLAND_DISPLAY=gamescope-secondary GAMESCOPE_WAYLAND_DISPLAY=gamescope-secondary >"$env_file.new"
 mv -f "$env_file.new" "$env_file"
 exec sleep infinity
