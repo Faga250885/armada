@@ -1,2 +1,3 @@
-# Disable runtime PM for WCD938x SoundWire RX/TX to keep jack detection alive.
-ACTION=="bind", SUBSYSTEM=="soundwire", KERNEL=="sdw:*:0217:010d:*", IMPORT{program}="/usr/libexec/armada/device-env", ENV{ARMADA_SOC_CLASS}=="SM8250", ATTR{power/control}="on"
+# Keep WCD938x SoundWire RX/TX awake for jack detection on SM8250.
+ACTION=="bind", SUBSYSTEM=="soundwire", KERNEL=="sdw:*:0217:010d:*", IMPORT{program}="/usr/libexec/armada/device-env"
+ACTION=="bind", SUBSYSTEM=="soundwire", KERNEL=="sdw:*:0217:010d:*", ENV{ARMADA_SOC_CLASS}=="SM8250", ATTR{power/control}="on"
