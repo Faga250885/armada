@@ -89,6 +89,13 @@ printf '%s\n' \
     'printf '\''%s\0'\'' "$@" >"$INNER_ARGS"' \
     >"$dbus_run_session"
 chmod +x "$dbus_run_session"
+envmanager="$tmp/plasma-mobile-envmanager"
+envmanager_args="$tmp/envmanager-args"
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf '\''%s\n'\'' "$*" "$PLASMA_PLATFORM" "$QT_QPA_PLATFORM" >"$ENVMANAGER_ARGS"' \
+    >"$envmanager"
+chmod +x "$envmanager"
 config_dir="$tmp/config"
 mkdir -p "$config_dir"
 printf 'saved desktop settings\n' >"$config_dir/plasmashellrc.desktop"
@@ -105,18 +112,23 @@ env \
     GAMESCOPE_LIMITER_FILE=/test/gamescope-limiter \
     ARMADA_DBUS_RUN_SESSION="$dbus_run_session" \
     ARMADA_KWIN_WAYLAND=/test/kwin_wayland \
+    ARMADA_PLASMA_MOBILE_ENVMANAGER="$envmanager" \
+    ENVMANAGER_ARGS="$envmanager_args" \
     INNER_ARGS="$inner_args" \
     INNER_ENV="$inner_env" \
     "$BOTTOM_SESSION"
 }
 run_bottom_session
+[[ "$(<"$envmanager_args")" == $'--apply-settings\nphone:handset\noffscreen' ]]
 mapfile -d '' -t actual <"$inner_args"
 expected=(
     /test/kwin_wayland
     --x11-display gamescope-1
     --fullscreen
     --no-lockscreen
+    --xwayland
     --exit-with-session '/usr/bin/plasmashell -p org.kde.plasma.mobileshell'
+    /usr/libexec/kf6/polkit-kde-authentication-agent-1
 )
 [[ "${#actual[@]}" == "${#expected[@]}" ]]
 for i in "${!expected[@]}"; do
@@ -209,14 +221,32 @@ printf '%s\n' \
     'printf '\''%s\n'\'' "$*" >"$XDG_RUNTIME_DIR/sleep-args"' \
     >"$tmp/bin/sleep"
 chmod +x "$tmp/bin/sleep"
-env \
+# Stands in for gamescope's environment before it set anything for its children.
+env -i PATH="$tmp/bin:$PATH" XDG_RUNTIME_DIR="$tmp/runtime" KEPT=same CHANGED=old REMOVED=gamescope /usr/bin/sleep 30 &
+gamescope_pid=$!
+env -i \
     PATH="$tmp/bin:$PATH" \
     XDG_RUNTIME_DIR="$tmp/runtime" \
+    ARMADA_BOTTOM_GAMESCOPE_PID="$gamescope_pid" \
+    KEPT=same \
+    CHANGED=new \
+    XDG_SESSION_TYPE=wayland \
+    SPACED='a b' \
     DISPLAY=:2 \
+    WAYLAND_DISPLAY=gamescope-1 \
     GAMESCOPE_WAYLAND_DISPLAY=gamescope-1 \
     "$BOTTOM_READY"
+kill "$gamescope_pid"
 [[ "$(readlink "$tmp/runtime/gamescope-secondary")" == gamescope-1 ]]
-[[ "$(<"$tmp/runtime/armada-bottom-env")" == $'DISPLAY=:2\nWAYLAND_DISPLAY=gamescope-secondary\nGAMESCOPE_WAYLAND_DISPLAY=gamescope-secondary' ]]
+bottom_env="$tmp/runtime/armada-bottom-env"
+for line in 'unset REMOVED' CHANGED=new XDG_SESSION_TYPE=wayland 'SPACED=a\ b' DISPLAY=:2; do
+    grep -Fxq "$line" "$bottom_env"
+done
+if grep -q '^KEPT=' "$bottom_env"; then
+    echo 'bottom env repeats a variable gamescope did not set' >&2
+    exit 1
+fi
+[[ "$(tail -n 2 "$bottom_env")" == $'WAYLAND_DISPLAY=gamescope-secondary\nGAMESCOPE_WAYLAND_DISPLAY=gamescope-secondary' ]]
 [[ "$(<"$tmp/runtime/sleep-args")" == infinity ]]
 
 client_env="$tmp/client-env"
@@ -225,8 +255,10 @@ env \
     DISPLAY=outer-x11 \
     WAYLAND_DISPLAY=outer-wayland \
     GAMESCOPE_WAYLAND_DISPLAY=gamescope-0 \
-    "$RUN_BOTTOM" -- bash -c 'printf "%s\n" "$DISPLAY" "$WAYLAND_DISPLAY" "$GAMESCOPE_WAYLAND_DISPLAY" "$1"' _ arg >"$client_env"
-[[ "$(<"$client_env")" == $':2\ngamescope-secondary\ngamescope-secondary\narg' ]]
+    REMOVED=caller \
+    CHANGED=caller \
+    "$RUN_BOTTOM" -- bash -c 'printf "%s\n" "$DISPLAY" "$WAYLAND_DISPLAY" "$GAMESCOPE_WAYLAND_DISPLAY" "${REMOVED-unset}" "$CHANGED" "$1"' _ arg >"$client_env"
+[[ "$(<"$client_env")" == $':2\ngamescope-secondary\ngamescope-secondary\nunset\nnew\narg' ]]
 
 # Without the bottom gamescope a client must not fall through to an inherited display.
 if env XDG_RUNTIME_DIR="$tmp/empty-runtime" DISPLAY=outer-x11 \
