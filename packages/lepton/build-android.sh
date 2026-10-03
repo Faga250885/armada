@@ -34,14 +34,22 @@ run "cd output && ../.buildscripts/copy_vendored_projects.sh >/dev/null &&
 
 git -C "${image}/android_hardware_waydroid" apply /work/patches/android-0001-*.patch
 git -C "${image}/output/hardware/interfaces" apply /work/patches/android-0002-*.patch
+git -C "${image}/output/packages/apps/DocumentsUI" apply /work/patches/android-0003-*.patch
+cp -r /work/rro "${image}/output/vendor/armada-lepton-overlay"
 
 run "cd output && ../.buildscripts/copy_vendored_projects.sh >/dev/null &&
      source build/envsetup.sh &&
      lunch lineage_lepton_arm64_only-userdebug &&
-     make hwcomposer.waydroid libhwc2on1adapter -j\$(nproc)"
+     make hwcomposer.waydroid libhwc2on1adapter DocumentsUI ExternalStorageProvider ArmadaLeptonFrameworkOverlay -j\$(nproc)"
 
 product="${image}/output/out/target/product/lepton_arm64_only"
 install -Dm0644 "${product}/vendor/lib64/hw/hwcomposer.waydroid.so" -t prebuilt/vendor/lib64/hw
 install -Dm0644 "${product}/vendor/lib64/libhwc2on1adapter.so" -t prebuilt/vendor/lib64
-# After a deliberate change, update the hashes in BASE.env.
-sha256sum prebuilt/vendor/lib64/hw/hwcomposer.waydroid.so prebuilt/vendor/lib64/libhwc2on1adapter.so
+# The file picker, which Valve's image leaves out.
+install -Dm0644 "${product}/system/priv-app/DocumentsUI/DocumentsUI.apk" -t prebuilt/system/priv-app/DocumentsUI
+install -Dm0644 "${product}/system/priv-app/ExternalStorageProvider/ExternalStorageProvider.apk" \
+    -t prebuilt/system/priv-app/ExternalStorageProvider
+install -Dm0644 "${product}/system/etc/permissions/com.android.documentsui.xml" -t prebuilt/system/etc/permissions
+# The second screen shows only what an app puts there instead of a mirror.
+install -Dm0644 "${product}/system/product/overlay/ArmadaLeptonFrameworkOverlay.apk" -t prebuilt/system/product/overlay
+(cd prebuilt && find . -type f -printf '%P\0' | sort -z | xargs -0 sha256sum) >prebuilt.sha256

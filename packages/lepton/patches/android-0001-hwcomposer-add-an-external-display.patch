@@ -19,9 +19,18 @@ scaled to the axis range EventHub reports for it. An input device
 configuration file for wayland_tablet associates it with the external
 display.
 
+With config_localDisplaysMirrorContent false, Android leaves the external
+display empty until an app presents there. While it is empty, drop the
+toplevel's role so the second compositor can show its own content or power
+the panel down; a null buffer alone would leave the window geometry on an
+empty surface, which wlroots rejects. The role comes back, through a new
+configure, once an app presents there. The toplevel starts out unmapped, and
+the display is announced once Android has booted, after framework overlays
+apply, so it never shows a mirror on the way up.
+
 ---
 diff --git a/hwcomposer/hwcomposer.cpp b/hwcomposer/hwcomposer.cpp
-index ca0d5ad..d4bd884 100644
+index ca0d5ad..493a76f 100644
 --- a/hwcomposer/hwcomposer.cpp
 +++ b/hwcomposer/hwcomposer.cpp
 @@ -93,14 +93,14 @@ namespace {
@@ -139,10 +148,33 @@ index ca0d5ad..d4bd884 100644
      if (!buf) {
          ALOGE("Failed to get wayland buffer");
          if (hwc_layer->acquireFenceFd != -1) {
-@@ -443,6 +455,30 @@ static void reset_per_commit_state_window(waydroid_hwc_composer_device_1 *pdev)
+@@ -443,6 +455,61 @@ static void reset_per_commit_state_window(waydroid_hwc_composer_device_1 *pdev)
      }
  }
  
++// Unmapped while no app draws here, so the second compositor can show its own content.
++static bool show_external(waydroid_hwc_composer_device_1 *pdev, bool content) {
++    window *win = pdev->ext_window.get();
++
++    if (!content) {
++        if (!pdev->ext_hidden) {
++            win->unmap();
++            pdev->ext_hidden = true;
++        }
++        return false;
++    }
++    if (pdev->ext_hidden) {
++        win->request_map();
++        // An unchanged frame is not presented again, so it waits for the configure
++        while (!win->configured)
++            usleep(1000);
++        wl_surface_attach(win->surface, win->bg_buffer, 0, 0);
++        wl_surface_damage(win->surface, 0, 0, INT32_MAX, INT32_MAX);
++        pdev->ext_hidden = false;
++    }
++    return true;
++}
++
 +static void set_external(waydroid_hwc_composer_device_1 *pdev, hwc_display_contents_1_t *contents) {
 +    struct display *d = pdev->ext_display;
 +    window *win = pdev->ext_window.get();
@@ -150,11 +182,19 @@ index ca0d5ad..d4bd884 100644
 +    if (contents->flags & HWC_GEOMETRY_CHANGED)
 +        d->buffer_map.clear();
 +
++    // Color layers have no buffer.
++    bool content = false;
++    for (size_t i = 0; i < contents->numHwLayers; i++) {
++        if (contents->hwLayers[i].compositionType != HWC_FRAMEBUFFER_TARGET && contents->hwLayers[i].handle)
++            content = true;
++    }
++    bool shown = show_external(pdev, content);
++
 +    for (size_t i = 0; i < contents->numHwLayers; i++) {
 +        hwc_layer_1_t *layer = &contents->hwLayers[i];
 +        layer->releaseFenceFd = -1;
 +
-+        if (layer->compositionType == HWC_FRAMEBUFFER_TARGET && layer->handle) {
++        if (shown && layer->compositionType == HWC_FRAMEBUFFER_TARGET && layer->handle) {
 +            win->reset_per_set_state();
 +            // closes the acquire fence
 +            apply_hwc_layer_to_surface_context(pdev, layer, i, win->get_next_layer(), nullptr, d);
@@ -170,7 +210,7 @@ index ca0d5ad..d4bd884 100644
  static int hwc_set(struct hwc_composer_device_1* dev,size_t numDisplays,
                     hwc_display_contents_1_t** displays) {
      if (HWC_DISPLAY_PRIMARY >= numDisplays || !displays)
-@@ -450,6 +486,12 @@ static int hwc_set(struct hwc_composer_device_1* dev,size_t numDisplays,
+@@ -450,6 +517,12 @@ static int hwc_set(struct hwc_composer_device_1* dev,size_t numDisplays,
  
      auto *pdev = static_cast<waydroid_hwc_composer_device_1 *>(dev);
  
@@ -183,7 +223,7 @@ index ca0d5ad..d4bd884 100644
      hwc_display_contents_1_t* contents = displays[HWC_DISPLAY_PRIMARY];
      assert(contents);
  
-@@ -491,6 +533,8 @@ static int hwc_set(struct hwc_composer_device_1* dev,size_t numDisplays,
+@@ -491,6 +564,8 @@ static int hwc_set(struct hwc_composer_device_1* dev,size_t numDisplays,
  
      sw_sync_timeline_inc(pdev->timeline_fd, 1);
      contents->retireFenceFd = sw_sync_fence_create(pdev->timeline_fd, "hwc_contents_release", ++pdev->next_sync_point);
@@ -192,7 +232,7 @@ index ca0d5ad..d4bd884 100644
      return 0;
  }
  
-@@ -533,7 +577,7 @@ static int hwc_query(struct hwc_composer_device_1 *dev, int what, int *value) {
+@@ -533,7 +608,7 @@ static int hwc_query(struct hwc_composer_device_1 *dev, int what, int *value) {
              value[0] = pdev->vsync_period_ns;
              break;
          case HWC_DISPLAY_TYPES_SUPPORTED:
@@ -201,7 +241,7 @@ index ca0d5ad..d4bd884 100644
              break;
          default:
              // unsupported query
-@@ -549,13 +593,17 @@ static void hwc_register_procs(struct hwc_composer_device_1* dev,
+@@ -549,13 +624,17 @@ static void hwc_register_procs(struct hwc_composer_device_1* dev,
      pdev->procs = procs;
  }
  
@@ -221,7 +261,7 @@ index ca0d5ad..d4bd884 100644
          configs[0] = 0;
          *numConfigs = 1;
          return 0;
-@@ -606,7 +654,22 @@ static int hwc_get_display_attributes(struct hwc_composer_device_1* dev,
+@@ -606,7 +685,22 @@ static int hwc_get_display_attributes(struct hwc_composer_device_1* dev,
                                        const uint32_t* attributes, int32_t* values) {
      auto *pdev = static_cast<waydroid_hwc_composer_device_1 *>(dev);
      for (int i = 0; attributes[i] != HWC_DISPLAY_NO_ATTRIBUTE; i++) {
@@ -245,7 +285,7 @@ index ca0d5ad..d4bd884 100644
              values[i] = hwc_attribute(pdev, attributes[i]);
              if (values[i] == -EINVAL) {
                  return -EINVAL;
-@@ -620,14 +683,14 @@ static int hwc_get_display_attributes(struct hwc_composer_device_1* dev,
+@@ -620,14 +714,14 @@ static int hwc_get_display_attributes(struct hwc_composer_device_1* dev,
      return 0;
  }
  
@@ -264,17 +304,16 @@ index ca0d5ad..d4bd884 100644
          return 0;
      return -EINVAL;
  }
-@@ -702,6 +765,18 @@ shutdown:
+@@ -702,6 +796,17 @@ shutdown:
      return NULL;
  }
  
 +static void* hwc_ext_hotplug_thread(void* data) {
 +    auto *pdev = static_cast<waydroid_hwc_composer_device_1 *>(data);
 +
-+    // The client registers its callbacks after open; announce the display once it has
-+    while (!pdev->procs || !pdev->procs->hotplug)
++    // After boot, once framework overlays are applied, so the display never starts out mirroring
++    while (!pdev->procs || !pdev->procs->hotplug || !property_get_bool("sys.boot_completed", false))
 +        usleep(100 * 1000);
-+    sleep(2);
 +    ALOGI("external display: hotplug");
 +    pdev->procs->hotplug(pdev->procs, HWC_DISPLAY_EXTERNAL, 1);
 +    return NULL;
@@ -283,7 +322,7 @@ index ca0d5ad..d4bd884 100644
  static int hwc_open(const struct hw_module_t* module, const char* name,
                      struct hw_device_t** device) {
      int ret = 0;
-@@ -793,6 +868,23 @@ static int hwc_open(const struct hw_module_t* module, const char* name,
+@@ -793,6 +898,25 @@ static int hwc_open(const struct hw_module_t* module, const char* name,
          first_window.reset();
      }
  
@@ -296,6 +335,8 @@ index ca0d5ad..d4bd884 100644
 +            pdev->ext_display->ext_abs_width = floor(pdev->display->width * pdev->display->scale);
 +            pdev->ext_display->ext_abs_height = floor(pdev->display->height * pdev->display->scale);
 +            pdev->ext_window = window::create(pdev->ext_display, false, "Waydroid", "none", {0, 0, 0, 255});
++            pdev->ext_window->unmap();
++            pdev->ext_hidden = true;
 +            ALOGI("external display %dx%d scale %f", pdev->ext_display->width, pdev->ext_display->height, pdev->ext_display->scale);
 +            if (pthread_create(&pdev->ext_hotplug_thread, NULL, hwc_ext_hotplug_thread, pdev))
 +                ALOGE("waydroid_hw_composer could not start the external hotplug thread");
@@ -308,25 +349,69 @@ index ca0d5ad..d4bd884 100644
      if (pdev->display->refresh > 1000 && pdev->display->refresh < 1000000)
          pdev->vsync_period_ns = 1000 * 1000 * 1000 / (pdev->display->refresh / 1000);
 diff --git a/hwcomposer/hwcomposer.h b/hwcomposer/hwcomposer.h
-index b147f38..da3009a 100644
+index b147f38..2e2c53e 100644
 --- a/hwcomposer/hwcomposer.h
 +++ b/hwcomposer/hwcomposer.h
-@@ -79,6 +79,10 @@ struct waydroid_hwc_composer_device_1 : hwc_composer_device_1_t {
+@@ -79,6 +79,11 @@ struct waydroid_hwc_composer_device_1 : hwc_composer_device_1_t {
      bool multi_windows;
  
      std::unique_ptr<waydroid_mode> selected_mode;
 +
 +    struct display *ext_display {};
 +    std::unique_ptr<window> ext_window;
++    bool ext_hidden = false;
 +    pthread_t ext_hotplug_thread;
  };
  
  int apply_hwc_layer_to_window(waydroid_hwc_composer_device_1 *pdev, hwc_layer_1 *hwc_layer, size_t hwc_layer_index, window *window);
 diff --git a/hwcomposer/wayland-hwc.cpp b/hwcomposer/wayland-hwc.cpp
-index ce1637a..b1ff93e 100644
+index ce1637a..873a9ef 100644
 --- a/hwcomposer/wayland-hwc.cpp
 +++ b/hwcomposer/wayland-hwc.cpp
-@@ -506,7 +506,9 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+@@ -125,7 +125,11 @@ xdg_surface_handle_configure(void *data, struct xdg_surface *surface,
+                  uint32_t serial)
+ {
+     auto window = static_cast<struct window *>(data);
++    std::lock_guard<std::mutex> lock(window->role_mutex);
+ 
++    // A configure for a role that has since been dropped
++    if (surface != window->xdg_surface)
++        return;
+     xdg_surface_ack_configure(surface, serial);
+ 
+     window->configured = true;
+@@ -412,6 +416,30 @@ void window::minimize() {
+     }
+ }
+ 
++// A null buffer alone would leave the window geometry on an empty surface, which wlroots rejects.
++void window::unmap() {
++    std::lock_guard<std::mutex> lock(role_mutex);
++    xdg_toplevel_destroy(xdg_toplevel);
++    xdg_toplevel = nullptr;
++    xdg_surface_destroy(xdg_surface);
++    xdg_surface = nullptr;
++    wl_surface_attach(surface, nullptr, 0, 0);
++    wl_surface_commit(surface);
++}
++
++void window::request_map() {
++    std::lock_guard<std::mutex> lock(role_mutex);
++    configured = false;
++    xdg_surface = xdg_wm_base_get_xdg_surface(display->wm_base, surface);
++    xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, this);
++    xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
++    xdg_toplevel_add_listener(xdg_toplevel, &xdg_toplevel_listener, this);
++    xdg_toplevel_set_fullscreen(xdg_toplevel, nullptr);
++    set_app_id(appID);
++    wl_surface_commit(surface);
++    wl_display_flush(display->display);
++}
++
+ window::~window() {
+     if (xdg_toplevel)
+         xdg_toplevel_destroy(xdg_toplevel);
+@@ -506,7 +534,9 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
          abort();
      }
  
@@ -337,7 +422,46 @@ index ce1637a..b1ff93e 100644
          window->set_maximize(true);
      }
      // Set title
-@@ -1319,6 +1321,136 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
+@@ -541,12 +571,15 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+         // See: https://github.com/swaywm/sway/issues/2176
+         // Some other compositors may refine the window size after a buffer is attached (Hyprland)
+         // Try second configure event, with buffer attached
+-        struct wl_buffer *buf = wl_shm_pool_create_buffer(pool, 0, 1, 1, 4, WL_SHM_FORMAT_ARGB8888);
+-        wl_surface_attach(window->surface, buf, 0, 0);
+-        if (window->viewport && display->req_width && display->req_height)
+-            wp_viewport_set_destination(window->viewport, display->req_width, display->req_height);
+-        wl_surface_commit(window->surface);
+-        wl_display_roundtrip(display->display);
++        // The second display stays unmapped until an app presents there
++        if (!display->secondary) {
++            struct wl_buffer *buf = wl_shm_pool_create_buffer(pool, 0, 1, 1, 4, WL_SHM_FORMAT_ARGB8888);
++            wl_surface_attach(window->surface, buf, 0, 0);
++            if (window->viewport && display->req_width && display->req_height)
++                wp_viewport_set_destination(window->viewport, display->req_width, display->req_height);
++            wl_surface_commit(window->surface);
++            wl_display_roundtrip(display->display);
++        }
+ 
+         if (fs) {
+             wp_fractional_scale_v1_destroy(fs);
+@@ -605,11 +638,13 @@ window::create(struct display *display, bool use_subsurfaces, std::string appID,
+     window->bg_buffer = wl_shm_pool_create_buffer(pool, 0, 1, 1, 4, WL_SHM_FORMAT_ARGB8888);
+     wl_shm_pool_destroy(pool);
+ 
+-    wl_surface_attach(window->surface, window->bg_buffer, 0, 0);
+-    wl_surface_damage(window->surface, 0, 0, INT32_MAX, INT32_MAX);
+     wp_viewport_set_source(window->viewport, wl_fixed_from_int(0), wl_fixed_from_int(0), wl_fixed_from_int(1), wl_fixed_from_int(1));
+     wp_viewport_set_destination(window->viewport, display->width, display->height);
+-    wl_surface_commit(window->surface);
++    if (!display->secondary) {
++        wl_surface_attach(window->surface, window->bg_buffer, 0, 0);
++        wl_surface_damage(window->surface, 0, 0, INT32_MAX, INT32_MAX);
++        wl_surface_commit(window->surface);
++    }
+ 
+     return window;
+ }
+@@ -1319,6 +1354,136 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
      xdg_wm_base_ping,
  };
  
@@ -474,7 +598,7 @@ index ce1637a..b1ff93e 100644
  static void
  seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t wl_caps)
  {
-@@ -1878,6 +2010,10 @@ registry_handle_global(void *data, struct wl_registry *registry,
+@@ -1878,6 +2043,10 @@ registry_handle_global(void *data, struct wl_registry *registry,
      } else if(strcmp(interface, "wl_shell") == 0) {
          d->shell = (struct wl_shell *)wl_registry_bind(
                  registry, id, &wl_shell_interface, 1);
@@ -485,7 +609,7 @@ index ce1637a..b1ff93e 100644
      } else if (strcmp(interface, "wl_seat") == 0) {
          d->seat = (struct wl_seat*)wl_registry_bind(registry, id,
                  &wl_seat_interface, std::min(version, (uint32_t)WL_POINTER_AXIS_SOURCE_SINCE_VERSION));
-@@ -1919,7 +2055,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
+@@ -1919,7 +2088,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
      } else if (strcmp(interface, "zwp_tablet_manager_v2") == 0) {
          d->tablet_manager = (struct zwp_tablet_manager_v2 *)wl_registry_bind(registry, id,
                  &zwp_tablet_manager_v2_interface, 1);
@@ -494,7 +618,7 @@ index ce1637a..b1ff93e 100644
              add_tablet_seat(d);
      } else if (strcmp(interface, "zwp_pointer_constraints_v1") == 0) {
          d->pointer_constraints = (struct zwp_pointer_constraints_v1 *)wl_registry_bind(
-@@ -1936,7 +2072,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
+@@ -1936,7 +2105,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
      } else if (strcmp(interface, wl_data_device_manager_interface.name) == 0) {
          d->data_device_manager = (struct wl_data_device_manager *)wl_registry_bind(registry, id,
                  &wl_data_device_manager_interface, std::min(version,  3U));
@@ -503,7 +627,7 @@ index ce1637a..b1ff93e 100644
              d->data_device = wl_data_device_manager_get_data_device(d->data_device_manager, d->seat);
      } else if (strcmp(interface, "gtk_shell1") == 0) {
          if (version < 6)
-@@ -2026,13 +2162,14 @@ void open_windows::erase(const key_type& key) {
+@@ -2026,13 +2195,14 @@ void open_windows::erase(const key_type& key) {
  }
  
  struct display *
@@ -520,10 +644,36 @@ index ce1637a..b1ff93e 100644
      display->system_version = property_get_int32("ro.system.build.version.sdk", 0);
      display->wayland_thread_created = false;
 diff --git a/hwcomposer/wayland-hwc.h b/hwcomposer/wayland-hwc.h
-index 775e457..7816562 100644
+index 775e457..9dd6164 100644
 --- a/hwcomposer/wayland-hwc.h
 +++ b/hwcomposer/wayland-hwc.h
-@@ -303,6 +303,12 @@ struct cursor_handler {
+@@ -28,6 +28,7 @@
+ 
+ #pragma once
+ 
++#include <mutex>
+ #include <cutils/native_handle.h>
+ 
+ #include <stdint.h>
+@@ -207,6 +208,8 @@ struct window {
+     std::string taskID;
+ 
+     std::atomic<bool> configured;
++    // Held while the xdg role is replaced and while a configure is acknowledged
++    std::mutex role_mutex;
+ 
+     // Reset every hwc_set cycle
+     struct wl_region* input_region;
+@@ -222,6 +225,8 @@ struct window {
+     void reset_per_set_state();
+ 
+     void minimize();
++    void unmap();
++    void request_map();
+     void set_maximize(bool enabled);
+     void set_title(const char *title);
+     void set_app_id(std::string appID);
+@@ -303,6 +308,12 @@ struct cursor_handler {
  struct display {
      pthread_t wayland_thread; // constant after init
      bool wayland_thread_created;
@@ -536,7 +686,7 @@ index 775e457..7816562 100644
  
      struct wl_display *display;
      struct wl_registry *registry;
-@@ -397,6 +403,6 @@ void
+@@ -397,6 +408,6 @@ void
  snapshot_inactive_app_window(struct display *display, struct window *window);
  
  struct display *
