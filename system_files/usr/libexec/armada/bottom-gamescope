@@ -18,6 +18,7 @@ eval "$("$device_env")"
 [[ -S "$lease_socket" ]] || fail "DRM lease socket is unavailable: $lease_socket"
 
 unset DISPLAY WAYLAND_DISPLAY GAMESCOPE_WAYLAND_DISPLAY
+export ARMADA_BOTTOM_GAMESCOPE_PID=$$
 exec "$gamescope" \
     --backend drm \
     --drm-lease-client "$lease_socket" \
