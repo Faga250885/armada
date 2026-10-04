@@ -48,3 +48,7 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0023-drm-power-down-an-idle-lease-companion-output.patch`
   source: armada
+- `patches/0024-steamcompmgr-report-wayland-windows-to-steam.patch`
+  source: armada
+- `patches/0025-wlserver-pass-touch-through-to-native-wayland-windows.patch`
+  source: armada
