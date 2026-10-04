@@ -43,6 +43,21 @@ if [[ "$_armada_vulkan_realtime" == true ]]; then
 fi
 unset _armada_game_tweaks _armada_vulkan_realtime
 
+_armada_swipe_gestures_config="${ARMADA_SWIPE_GESTURES_CONFIG:-/etc/armada/swipe-gestures.conf}"
+if [[ -r "$_armada_swipe_gestures_config" ]]; then
+    while IFS= read -r _armada_line || [[ -n "$_armada_line" ]]; do
+        if [[ "$_armada_line" =~ ^[[:space:]]*enabled[[:space:]]*=[[:space:]]*([01])[[:space:]]*$ ]]; then
+            # Any nonempty value, including 0, disables gestures in the launcher.
+            if [[ "${BASH_REMATCH[1]}" == 0 ]]; then
+                export DISABLE_TOUCH_GESTURES=1
+            else
+                export DISABLE_TOUCH_GESTURES=
+            fi
+        fi
+    done <"$_armada_swipe_gestures_config"
+fi
+unset _armada_swipe_gestures_config _armada_line
+
 # Set up first time bootstrap status
 export STEAM_BOOTSTRAP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/gamescope/bootstrap.cfg"
 
