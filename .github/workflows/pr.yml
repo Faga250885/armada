@@ -395,6 +395,20 @@ jobs:
           jq '{layers: (.layers | length), compressed_bytes: ([.layers[].size] | add)}' \
             "${CHUNKAH_MANIFEST_FILE}" >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Export container image
+        run: |
+          skopeo copy "oci:${RUNNER_TEMP}/chunked" \
+            "oci-archive:${RUNNER_TEMP}/armada-${DISK_TAG}.tar"
+
+      - name: Upload container image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: armada-container-pr${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/armada-${{ env.DISK_TAG }}.tar
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
       - name: Load the image for the disk build
         run: |
           set -euxo pipefail
