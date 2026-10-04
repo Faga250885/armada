@@ -122,6 +122,16 @@ FROM scratch AS out-wpa_supplicant
 COPY --from=pkg-wpa_supplicant /work/out/ /rpms/
 
 
+FROM builder-base AS pkg-scx-scheds
+COPY TERRA.env /src/
+COPY scx-scheds/ /work/
+WORKDIR /work
+RUN ./build.sh && /src/scrub-scratch.sh
+
+FROM scratch AS out-scx-scheds
+COPY --from=pkg-scx-scheds /work/out/ /rpms/
+
+
 FROM builder-base AS pkg-plasma-mobile
 COPY plasma-mobile/ /work/
 WORKDIR /work

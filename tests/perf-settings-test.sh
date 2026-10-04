@@ -573,7 +573,8 @@ try:
     scx.scx_warned = set()
 
     scx.enforce_scheduler({"scheduler": "lavd"})
-    check("lavd started", FakeProc.launched[-1] == ["/usr/bin/scx_lavd"])
+    lavd_command = ["/usr/bin/scx_lavd", "--pinned-slice-us", "500", "--dd-max-wait-us", "0"]
+    check("lavd started", FakeProc.launched[-1] == lavd_command)
     scx.enforce_scheduler({"scheduler": "lavd"})
     check("same spec not restarted", len(FakeProc.launched) == 1)
 
@@ -588,7 +589,7 @@ try:
     scx.enforce_scheduler({"scheduler": "cosmos", "schedulerDomain": [3, 4, 5, 6, 7]})
     check("same failed spec backed off", len(FakeProc.launched) == 2)
     scx.enforce_scheduler({"scheduler": "lavd"})
-    check("other spec unaffected by backoff", FakeProc.launched[-1] == ["/usr/bin/scx_lavd"])
+    check("other spec unaffected by backoff", FakeProc.launched[-1] == lavd_command)
 
     scx.enforce_scheduler({"scheduler": "eevdf"})
     check("eevdf stops scx child", scx.scx_child is None and scx.scx_spec is None)

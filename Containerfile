@@ -53,6 +53,9 @@ FROM ${NETWORKMANAGER_REF} AS networkmanager
 ARG WPA_SUPPLICANT_REF
 FROM ${WPA_SUPPLICANT_REF} AS wpa_supplicant
 
+ARG SCX_SCHEDS_REF
+FROM ${SCX_SCHEDS_REF} AS scx-scheds
+
 ARG JUPITER_HW_SUPPORT_REF
 FROM ${JUPITER_HW_SUPPORT_REF} AS jupiter-hw-support
 
@@ -116,6 +119,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=steamos-manager,source=/rpms,target=/packages/steamos-manager \
     --mount=type=bind,from=networkmanager,source=/rpms,target=/packages/networkmanager \
     --mount=type=bind,from=wpa_supplicant,source=/rpms,target=/packages/wpa_supplicant \
+    --mount=type=bind,from=scx-scheds,source=/rpms,target=/packages/scx-scheds \
     --mount=type=bind,from=jupiter-hw-support,source=/rpms,target=/packages/jupiter-hw-support \
     --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=lepton,source=/rpms,target=/packages/lepton \
