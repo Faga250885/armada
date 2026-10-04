@@ -40,7 +40,7 @@ cp -r /work/rro "${image}/output/vendor/armada-lepton-overlay"
 run "cd output && ../.buildscripts/copy_vendored_projects.sh >/dev/null &&
      source build/envsetup.sh &&
      lunch lineage_lepton_arm64_only-userdebug &&
-     make hwcomposer.waydroid libhwc2on1adapter DocumentsUI ExternalStorageProvider ArmadaLeptonFrameworkOverlay -j\$(nproc)"
+     make hwcomposer.waydroid libhwc2on1adapter DocumentsUI ExternalStorageProvider ArmadaLeptonFrameworkOverlay LatinIME -j\$(nproc)"
 
 product="${image}/output/out/target/product/lepton_arm64_only"
 install -Dm0644 "${product}/vendor/lib64/hw/hwcomposer.waydroid.so" -t prebuilt/vendor/lib64/hw
@@ -50,6 +50,11 @@ install -Dm0644 "${product}/system/priv-app/DocumentsUI/DocumentsUI.apk" -t preb
 install -Dm0644 "${product}/system/priv-app/ExternalStorageProvider/ExternalStorageProvider.apk" \
     -t prebuilt/system/priv-app/ExternalStorageProvider
 install -Dm0644 "${product}/system/etc/permissions/com.android.documentsui.xml" -t prebuilt/system/etc/permissions
+# The on-screen keyboard. Its app lib dir links to the system copy, which a
+# file overlay cannot follow, so both get the library.
+install -Dm0644 "${product}/system/product/app/LatinIME/LatinIME.apk" -t prebuilt/system/product/app/LatinIME
+install -Dm0644 "${product}/system/product/lib64/libjni_latinime.so" -t prebuilt/system/product/lib64
+install -Dm0644 "${product}/system/product/lib64/libjni_latinime.so" -t prebuilt/system/product/app/LatinIME/lib/arm64
 # The second screen shows only what an app puts there instead of a mirror.
 install -Dm0644 "${product}/system/product/overlay/ArmadaLeptonFrameworkOverlay.apk" -t prebuilt/system/product/overlay
 (cd prebuilt && find . -type f -printf '%P\0' | sort -z | xargs -0 sha256sum) >prebuilt.sha256
