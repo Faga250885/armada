@@ -52,3 +52,5 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0025-wlserver-pass-touch-through-to-native-wayland-windows.patch`
   source: armada
+- `patches/0026-upscale-use-sgsr-for-sdr-fsr-requests.patch`
+  source: armada
