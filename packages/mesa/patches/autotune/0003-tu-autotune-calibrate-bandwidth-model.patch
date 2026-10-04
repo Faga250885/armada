@@ -13,7 +13,7 @@ Assisted by: Gemini
  src/freedreno/vulkan/meson.build          |    1 +
  src/freedreno/vulkan/tu_autotune.cc       |  431 ++++-
  src/freedreno/vulkan/tu_autotune.h        |   49 +-
- src/freedreno/vulkan/tu_autotune_calib.cc | 1850 +++++++++++++++++++++
+ src/freedreno/vulkan/tu_autotune_calib.cc | 1856 +++++++++++++++++++++
  src/freedreno/vulkan/tu_autotune_calib.h  |   94 ++
  src/freedreno/vulkan/tu_cmd_buffer.cc     |   65 +-
  src/freedreno/vulkan/tu_cmd_buffer.h      |   17 +
@@ -24,7 +24,7 @@ Assisted by: Gemini
  src/freedreno/vulkan/tu_pass.h            |   11 +
  src/freedreno/vulkan/tu_shader.cc         |   15 +
  src/freedreno/vulkan/tu_shader.h          |    1 +
- 14 files changed, 2551 insertions(+), 30 deletions(-)
+ 14 files changed, 2557 insertions(+), 30 deletions(-)
  create mode 100644 src/freedreno/vulkan/tu_autotune_calib.cc
  create mode 100644 src/freedreno/vulkan/tu_autotune_calib.h
 
@@ -765,7 +765,7 @@ new file mode 100644
 index 00000000000..79a69744c6a
 --- /dev/null
 +++ b/src/freedreno/vulkan/tu_autotune_calib.cc
-@@ -0,0 +1,1850 @@
+@@ -0,0 +1,1856 @@
 +/*
 + * Copyright © 2026 ROCKNIX
 + * SPDX-License-Identifier: MIT
@@ -829,6 +829,7 @@ index 00000000000..79a69744c6a
 +}
 +constexpr uint32_t PROBE_ROUNDS = 11; /* the first round is discarded */
 +constexpr uint32_t WARMUP_PASSES = 64; /* ~35 ms of GPU work per batch on A610 */
++constexpr int64_t WARMUP_BATCH_NS = 35'000'000;
 +constexpr uint32_t WARMUP_MAX_BATCHES = 8;
 +constexpr uint32_t OVERDRAW_LAYERS = 4;
 +constexpr uint32_t DRAWS_FEW = 16;
@@ -1121,11 +1122,14 @@ index 00000000000..79a69744c6a
 +   }
 +   if (alu_chain) {
 +      /* dependent chain on the push colour so nothing gets folded */
++      const uint32_t fp_math_ctrl = b->fp_math_ctrl;
++      b->fp_math_ctrl = nir_fp_exact;
 +      nir_def *k = nir_imm_vec4(b, 1.0001f, 0.9999f, 1.0002f, 0.9998f);
 +      nir_def *v = color;
 +      for (uint32_t i = 0; i < alu_chain; i++)
 +         v = nir_fadd(b, nir_fmul(b, v, k), color);
-+      color = v;
++      b->fp_math_ctrl = fp_math_ctrl;
++      color = nir_ffract(b, v);
 +   }
 +   if (tex_fetches) {
 +      nir_variable *tex = nir_variable_create(
@@ -1728,7 +1732,8 @@ index 00000000000..79a69744c6a
 +bool
 +run_warmup(probe &p)
 +{
-+   int64_t previous_ns = 0;
++   uint32_t passes = 1;
++   int64_t previous_pass_ns = 0;
 +   for (uint32_t batch = 0; batch < WARMUP_MAX_BATCHES; batch++) {
 +      if (!begin_cmd_buffer(p))
 +         return false;
@@ -1740,7 +1745,7 @@ index 00000000000..79a69744c6a
 +         record_layout_transition(p, p.depth, true);
 +         record_layout_transition(p, p.tex);
 +      }
-+      for (uint32_t i = 0; i < WARMUP_PASSES; i++) {
++      for (uint32_t i = 0; i < passes; i++) {
 +         if (!record_pass(p, PASS_SYSMEM_OVERDRAW_N, false))
 +            return false;
 +      }
@@ -1750,11 +1755,12 @@ index 00000000000..79a69744c6a
 +      int64_t start_ns = os_time_get_nano();
 +      if (!submit_and_wait(p))
 +         return false;
-+      int64_t batch_ns = os_time_get_nano() - start_ns;
++      const int64_t pass_ns = MAX2((os_time_get_nano() - start_ns) / passes, (int64_t) 1);
 +
-+      if (previous_ns && llabs(batch_ns - previous_ns) * 20 < previous_ns)
++      if (previous_pass_ns && llabs(pass_ns - previous_pass_ns) * 20 < previous_pass_ns)
 +         return true; /* within 5% of the previous batch */
-+      previous_ns = batch_ns;
++      previous_pass_ns = pass_ns;
++      passes = (uint32_t) CLAMP(WARMUP_BATCH_NS / pass_ns, (int64_t) 1, (int64_t) WARMUP_PASSES);
 +   }
 +   return true;
 +}
@@ -2634,7 +2640,7 @@ index 00000000000..7ff5bdb60b9
 +
 +struct tu_device;
 +
-+#define TU_AUTOTUNE_CALIB_VERSION 12
++#define TU_AUTOTUNE_CALIB_VERSION 13
 +
 +/* Settings that change what the probe measures, part of the cache key. */
 +#define TU_AUTOTUNE_CALIB_COND_PAYLOAD       (1u << 0) /* TU_AUTOTUNE_CALIB=payload */

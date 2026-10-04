@@ -27,4 +27,3 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   upstream: https://gitlab.freedesktop.org/mesa/mesa/-/commit/af16b1ceb1e60f8b1718bbb7522c105a2b5698b1
 - `patches/autotune/0003-tu-autotune-calibrate-bandwidth-model.patch`
   source: https://github.com/sunshineinabox/distribution/blob/ba1dad96c1007edd661341b70bf7d9811a825231/projects/ROCKNIX/packages/graphics/mesa/patches/0003-tu-autotune-calibrate-the-bandwidth-model-and-adapt-it-at-runtime.patch
-  notes: adds a 5792 probe image size so the Adreno 830 reaches the minimum bin count
