@@ -5,11 +5,18 @@
 set -euo pipefail
 
 steamosctl=${ARMADA_STEAMOSCTL:-/usr/bin/steamosctl}
-qdbus=${ARMADA_QDBUS:-/usr/bin/qdbus-qt6}
 
-# The nested desktop has a session bus of its own, without steamos-manager; its shell quitting ends it.
+# The nested desktop has a session bus of its own, without steamos-manager. Steam
+# keeps its app open until everything started there has gone, as on "Exit game".
 if [[ -n "${ARMADA_NESTED_DESKTOP:-}" && "${1:-gamescope}" == gamescope ]]; then
-    exec "${qdbus}" org.kde.plasmashell /MainApplication org.qtproject.Qt.QCoreApplication.quit
+    for environ in /proc/[0-9]*/environ; do
+        pid=${environ#/proc/}
+        pid=${pid%/environ}
+        if [[ "${pid}" != "$$" ]] && grep -qzx "ARMADA_NESTED_DESKTOP=${ARMADA_NESTED_DESKTOP}" "${environ}" 2>/dev/null; then
+            kill "${pid}" 2>/dev/null || true
+        fi
+    done
+    exit 0
 fi
 
 case "${1:-gamescope}" in

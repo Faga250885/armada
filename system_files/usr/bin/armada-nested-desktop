@@ -10,7 +10,7 @@ bottom=armada-bottom-screen.service
 # Steam's xcb keeps the shell's panels from mapping; its IM modules leave Qt apps without text input.
 unset LD_PRELOAD LC_ALL QT_QPA_PLATFORM QT_IM_MODULE GTK_IM_MODULE
 export XDG_SESSION_TYPE=wayland
-export ARMADA_NESTED_DESKTOP=1
+export ARMADA_NESTED_DESKTOP=$$
 
 # Two shells cannot share Plasma's config. The unit outlives Steam killing this tree, to restart the bottom one.
 "$systemd_run" --user --quiet --collect --unit="armada-nested-desktop-$$" /bin/bash -c '

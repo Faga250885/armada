@@ -76,7 +76,8 @@ expected=("${expected[@]:0:8}" --inputmethod /usr/bin/plasma-keyboard "${expecte
 for i in "${!expected[@]}"; do
     [[ "${actual[$i]}" == "${expected[$i]}" ]]
 done
-[[ "$(<"$tmp/inner-env")" == $'KDE\n1\nunset\nunset\nunset\nunset\nunset\nwayland\nunset\nunset\n1' ]]
+[[ "$(head -n -1 "$tmp/inner-env")" == $'KDE\n1\nunset\nunset\nunset\nunset\nunset\nwayland\nunset\nunset' ]]
+[[ "$(tail -n 1 "$tmp/inner-env")" =~ ^[0-9]+$ ]]
 [[ "$(<"$tmp/systemctl-log-0")" == '--user stop armada-bottom-screen.service' ]]
 mapfile -t watcher <"$tmp/systemd-run-log-0"
 [[ "${watcher[0]}" =~ ^[0-9]+$ ]]
@@ -104,7 +105,8 @@ printf 'desktop_session = "armada-plasma-mobile.desktop"\n' >"$tmp/config-0/stea
 run_nested 0 mobile
 mapfile -d '' -t actual <"$tmp/inner-args"
 [[ "${actual[9]}" == "$real_home /usr/bin/plasmashell -p org.kde.plasma.mobileshell" ]]
-[[ "$(<"$tmp/inner-env")" == $'KDE\n1\nunset\nunset\nphone:handset\nunset\nunset\nwayland\nunset\nunset\n1' ]]
+[[ "$(head -n -1 "$tmp/inner-env")" == $'KDE\n1\nunset\nunset\nphone:handset\nunset\nunset\nwayland\nunset\nunset' ]]
+[[ "$(tail -n 1 "$tmp/inner-env")" =~ ^[0-9]+$ ]]
 [[ ! " ${actual[*]} " =~ ' --inputmethod ' ]]
 [[ "$(<"$tmp/config-0/armada/nested-desktop/kwinrc")" == $'[Wayland]\nVirtualKeyboardMode=1' ]]
 
@@ -136,20 +138,28 @@ run_watcher ''
 run_watcher armada-nested-desktop-1
 [[ ! -s "$tmp/watcher-log" ]]
 
-# Return to Game Mode inside the nested desktop quits its shell; elsewhere it still asks steamos-manager.
-printf '%s\n' '#!/usr/bin/env bash' 'printf '\''%s\n'\'' "$0 $*" >"$SELECT_LOG"' >"$tmp/select-stub"
-chmod +x "$tmp/select-stub"
-ln -s select-stub "$tmp/qdbus"
-ln -s select-stub "$tmp/steamosctl"
+# Return to Game Mode inside the nested desktop ends what was started there; elsewhere it still asks steamos-manager.
+printf '%s\n' '#!/usr/bin/env bash' 'printf '\''%s\n'\'' "$*" >"$SELECT_LOG"' >"$tmp/steamosctl"
+chmod +x "$tmp/steamosctl"
 run_select() {
-    env SELECT_LOG="$tmp/select-log" ARMADA_QDBUS="$tmp/qdbus" ARMADA_STEAMOSCTL="$tmp/steamosctl" "$@"
+    : >"$tmp/select-log"
+    env -u ARMADA_NESTED_DESKTOP SELECT_LOG="$tmp/select-log" ARMADA_STEAMOSCTL="$tmp/steamosctl" "$@"
 }
-run_select ARMADA_NESTED_DESKTOP=1 bash "$SESSION_SELECT" gamescope
-[[ "$(<"$tmp/select-log")" == "$tmp/qdbus org.kde.plasmashell /MainApplication org.qtproject.Qt.QCoreApplication.quit" ]]
+marker="test-$$-$RANDOM"
+ARMADA_NESTED_DESKTOP="$marker" sleep 60 &
+inside=$!
+ARMADA_NESTED_DESKTOP="other-$marker" sleep 60 &
+outside=$!
+sleep 0.2
+run_select ARMADA_NESTED_DESKTOP="$marker" bash "$SESSION_SELECT" gamescope
+[[ ! -s "$tmp/select-log" ]]
+wait "$inside" && exit 1
+kill -0 "$outside"
+kill "$outside"
 run_select bash "$SESSION_SELECT" gamescope
-[[ "$(<"$tmp/select-log")" == "$tmp/steamosctl switch-to-game-mode" ]]
-run_select ARMADA_NESTED_DESKTOP=1 bash "$SESSION_SELECT" desktop
-[[ "$(<"$tmp/select-log")" == "$tmp/steamosctl switch-to-desktop-mode" ]]
+[[ "$(<"$tmp/select-log")" == switch-to-game-mode ]]
+run_select ARMADA_NESTED_DESKTOP="$marker" bash "$SESSION_SELECT" desktop
+[[ "$(<"$tmp/select-log")" == switch-to-desktop-mode ]]
 
 if env -u DISPLAY SYSTEMCTL_LOG=/dev/null SYSTEMD_RUN_LOG=/dev/null \
     ARMADA_SYSTEMD_RUN="$systemd_run" \
