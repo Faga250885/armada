@@ -110,6 +110,8 @@ env \
     DISABLE_GAMESCOPE_WSI=0 \
     GAMESCOPE_WAYLAND_DISPLAY=gamescope-1 \
     GAMESCOPE_LIMITER_FILE=/test/gamescope-limiter \
+    ARMADA_GAMESCOPE_PLASMA_LIB="$ROOT/system_files/usr/lib/armada/gamescope-plasma-lib" \
+    ARMADA_PLASMA_CONFIG_LIB="$ROOT/system_files/usr/lib/armada/plasma-config-lib" \
     ARMADA_DBUS_RUN_SESSION="$dbus_run_session" \
     ARMADA_KWIN_WAYLAND=/test/kwin_wayland \
     ARMADA_PLASMA_MOBILE_ENVMANAGER="$envmanager" \
@@ -130,6 +132,7 @@ expected=(
     --exit-with-session '/usr/bin/plasmashell -p org.kde.plasma.mobileshell'
     /usr/libexec/kf6/polkit-kde-authentication-agent-1
 )
+[[ ! -e "$config_dir/armada" ]]
 [[ "${#actual[@]}" == "${#expected[@]}" ]]
 for i in "${!expected[@]}"; do
     [[ "${actual[$i]}" == "${expected[$i]}" ]]
@@ -169,7 +172,10 @@ grep -q 'refusing to overwrite' "$tmp/config-conflict"
 [[ "$(<"$config_dir/plasmashellrc")" == 'active settings' ]]
 [[ "$(<"$config_dir/plasmashellrc.desktop")" == 'saved settings' ]]
 
-if env -u DISPLAY "$BOTTOM_SESSION" 2>"$tmp/no-display"; then
+if env -u DISPLAY \
+    ARMADA_GAMESCOPE_PLASMA_LIB="$ROOT/system_files/usr/lib/armada/gamescope-plasma-lib" \
+    ARMADA_PLASMA_CONFIG_LIB="$ROOT/system_files/usr/lib/armada/plasma-config-lib" \
+    "$BOTTOM_SESSION" 2>"$tmp/no-display"; then
     echo 'bottom session started without DISPLAY' >&2
     exit 1
 fi

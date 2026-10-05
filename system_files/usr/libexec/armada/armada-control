@@ -45,6 +45,7 @@ DESKTOP_SESSION_FOR_MODE = {
 }
 BOTTOM_SCREEN_SERVICE = "armada-bottom-screen.service"
 GAME_MODE_SERVICE = "gamescope-session-plus@steam.service"
+NESTED_DESKTOP_UNITS = "armada-nested-desktop-*.service"
 BOTTOM_SCREEN_BRIGHTNESS_PATH = Path("/etc/armada/bottom-screen-brightness")
 BOTTOM_SCREEN_BRIGHTNESS_RESTORE_INTERVAL = 2
 BACKLIGHT_ROOT = Path("/sys/class/backlight")
@@ -536,7 +537,11 @@ def action_set_bottom_screen_enabled(request):
         game_mode = session_systemctl(
             "is-active", "--quiet", GAME_MODE_SERVICE, check=False, timeout=5,
         )
-        if game_mode.returncode == 0:
+        # The nested desktop starts the bottom screen itself when it exits.
+        nested_desktop = session_systemctl(
+            "is-active", "--quiet", NESTED_DESKTOP_UNITS, check=False, timeout=5,
+        )
+        if game_mode.returncode == 0 and nested_desktop.returncode != 0:
             session_systemctl("start", BOTTOM_SCREEN_SERVICE)
     else:
         session_systemctl("disable", "--now", BOTTOM_SCREEN_SERVICE)

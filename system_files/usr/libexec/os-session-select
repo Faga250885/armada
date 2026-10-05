@@ -5,6 +5,12 @@
 set -euo pipefail
 
 steamosctl=${ARMADA_STEAMOSCTL:-/usr/bin/steamosctl}
+qdbus=${ARMADA_QDBUS:-/usr/bin/qdbus-qt6}
+
+# The nested desktop has a session bus of its own, without steamos-manager; its shell quitting ends it.
+if [[ -n "${ARMADA_NESTED_DESKTOP:-}" && "${1:-gamescope}" == gamescope ]]; then
+    exec "${qdbus}" org.kde.plasmashell /MainApplication org.qtproject.Qt.QCoreApplication.quit
+fi
 
 case "${1:-gamescope}" in
     desktop|plasma) exec "${steamosctl}" switch-to-desktop-mode ;;

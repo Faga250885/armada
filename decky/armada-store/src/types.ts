@@ -4,6 +4,7 @@ export interface LaunchSpec {
   startDir: string;
   launchOptions: string;
   compatTool?: string;
+  controllerTemplate?: string;
 }
 
 export interface CatalogApp {
