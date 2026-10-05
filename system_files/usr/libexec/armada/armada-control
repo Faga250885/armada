@@ -524,10 +524,25 @@ def action_get_gyro(request):
 
 def action_set_gyro_enabled(request):
     enabled = bool(request.get("enabled"))
-    if enabled != gyro_enabled():
-        atomic_write(GYRO_CONFIG, f"INPUTPLUMBER_FASTRPC={int(enabled)}\n")
-        run(["/usr/bin/systemctl", "restart", "inputplumber.service"], timeout=30)
-    return {"enabled": gyro_enabled()}
+    previous = gyro_enabled()
+
+    if enabled == previous:
+        return {"enabled": previous}
+
+    atomic_write(GYRO_CONFIG, f"INPUTPLUMBER_FASTRPC={int(enabled)}\n")
+    try:
+        run(
+            ["/usr/bin/systemctl", "restart", "inputplumber.service"],
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        atomic_write(
+            GYRO_CONFIG,
+            f"INPUTPLUMBER_FASTRPC={int(previous)}\n",
+        )
+        raise
+
+    return {"enabled": enabled}
 
 
 def action_get_device_env(request):
