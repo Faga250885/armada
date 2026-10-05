@@ -30,6 +30,10 @@ control.MEM_SLEEP_PATH = work / "mem_sleep"
 control.MEM_SLEEP_PATH.write_text("[s2idle] deep\n")
 control.BOTTOM_SCREEN_BRIGHTNESS_PATH = work / "bottom-screen-brightness"
 control.BACKLIGHT_ROOT = work / "backlight"
+control.DRM_ROOT = work / "drm"
+secondary_connector = control.DRM_ROOT / "card0-DSI-1"
+secondary_connector.mkdir(parents=True)
+(secondary_connector / "enabled").write_text("disabled\n")
 secondary_backlight = control.BACKLIGHT_ROOT / "secondary"
 secondary_backlight.mkdir(parents=True)
 (secondary_backlight / "brightness").write_text("128\n")
@@ -41,7 +45,7 @@ class Result:
         self.returncode = returncode
 
 
-unit_state = {"enabled": False, "game_mode": True}
+unit_state = {"enabled": False, "game_mode": True, "nested_desktop": False}
 systemctl_calls = []
 
 
@@ -49,6 +53,8 @@ def fake_session_systemctl(*args, check=True, timeout=30):
     systemctl_calls.append(args)
     if args[:2] == ("is-enabled", "--quiet"):
         return Result(0 if unit_state["enabled"] else 1)
+    if args[:3] == ("is-active", "--quiet", control.NESTED_DESKTOP_UNITS):
+        return Result(0 if unit_state["nested_desktop"] else 4)
     if args[:2] == ("is-active", "--quiet"):
         return Result(0 if unit_state["game_mode"] else 3)
     if args[0] == "enable":
@@ -71,6 +77,13 @@ assert ("start", control.BOTTOM_SCREEN_SERVICE) in systemctl_calls
 assert control.action_set_bottom_screen_enabled({"enabled": False}) == {"enabled": False}
 assert ("disable", "--now", control.BOTTOM_SCREEN_SERVICE) in systemctl_calls
 
+unit_state["nested_desktop"] = True
+systemctl_calls.clear()
+assert control.action_set_bottom_screen_enabled({"enabled": True}) == {"enabled": True}
+assert ("start", control.BOTTOM_SCREEN_SERVICE) not in systemctl_calls
+control.action_set_bottom_screen_enabled({"enabled": False})
+unit_state["nested_desktop"] = False
+
 unit_state["game_mode"] = False
 systemctl_calls.clear()
 assert control.action_set_bottom_screen_enabled({"enabled": True}) == {"enabled": True}
@@ -92,11 +105,18 @@ except ValueError:
 else:
     raise AssertionError("invalid bottom-screen state was accepted")
 
-control.device_env = lambda: {"ARMADA_SECONDARY_BACKLIGHT": "secondary"}
+control.device_env = lambda: {
+    "ARMADA_SECONDARY_BACKLIGHT": "secondary",
+    "ARMADA_SECONDARY_CONNECTOR": "DSI-1",
+}
 assert control.action_get_bottom_screen_brightness({}) == {
     "supported": True,
     "brightness": 50,
+    "active": False,
 }
+(secondary_connector / "enabled").write_text("enabled\n")
+assert control.action_get_bottom_screen_brightness({})["active"] is True
+(secondary_connector / "enabled").write_text("disabled\n")
 assert control.action_set_bottom_screen_brightness({"brightness": 40}) == {"brightness": 40}
 assert (secondary_backlight / "brightness").read_text() == "102\n"
 assert control.BOTTOM_SCREEN_BRIGHTNESS_PATH.read_text() == "40\n"
@@ -136,6 +156,7 @@ control.device_env = lambda: {}
 assert control.action_get_bottom_screen_brightness({}) == {
     "supported": False,
     "brightness": 0,
+    "active": False,
 }
 try:
     control.action_set_bottom_screen_brightness({"brightness": 50})
@@ -150,7 +171,7 @@ from armada_control import system as plugin_system
 
 def fake_plugin_call(action, **payload):
     if action == "get_bottom_screen_brightness":
-        return {"supported": True, "brightness": 50}
+        return {"supported": True, "brightness": 50, "active": True}
     if action == "set_bottom_screen_brightness":
         return {"brightness": int(payload["brightness"])}
     return {"enabled": action == "get_bottom_screen_enabled" or bool(payload.get("enabled"))}
@@ -160,6 +181,7 @@ plugin_system.call = fake_plugin_call
 assert plugin_system.bottom_screen_enabled()
 assert plugin_system.set_bottom_screen_enabled(True)
 assert plugin_system.bottom_screen_brightness() == 50
+assert plugin_system.bottom_screen_active()
 assert plugin_system.set_bottom_screen_brightness(40) == 40
 
 plugin_system.MEM_SLEEP_PATH = control.MEM_SLEEP_PATH
