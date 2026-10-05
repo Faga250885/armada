@@ -68,12 +68,15 @@ common='--buildtype release --prefix /usr
     -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=msm
     -Dplatforms=x11,wayland -Dglx=disabled -Degl=disabled -Dgbm=disabled
     -Dopengl=false -Dllvm=disabled -Dallow-fallback-for=libdrm'
-CFLAGS='-march=x86-64' CXXFLAGS='-march=x86-64' \
-    meson setup build-x86_64 --libdir lib $common
-ninja -C build-x86_64
-CFLAGS='-march=x86-64' CXXFLAGS='-march=x86-64' \
-    meson setup build-i686 --libdir lib32 --cross-file /tmp/cross32 $common
-ninja -C build-i686
+build_turnip() {
+    CFLAGS='-march=x86-64' CXXFLAGS='-march=x86-64' \
+        meson setup build-x86_64 --libdir lib $common
+    ninja -C build-x86_64
+    CFLAGS='-march=x86-64' CXXFLAGS='-march=x86-64' \
+        meson setup build-i686 --libdir lib32 --cross-file /tmp/cross32 $common
+    ninja -C build-i686
+}
+build_turnip
 
 install -m 0644 build-x86_64/src/freedreno/vulkan/libvulkan_freedreno.so    /work/out/rootfs/usr/lib/
 install -m 0644 build-x86_64/src/freedreno/vulkan/freedreno_icd.x86_64.json /work/out/rootfs/usr/share/vulkan/icd.d/
@@ -85,9 +88,30 @@ install -m 0644 build-i686/src/freedreno/vulkan/freedreno_icd.i686.json     /wor
 install -m 0644 /usr/lib/libxcb-keysyms.so.1   /work/out/rootfs/usr/lib/
 install -m 0644 /usr/lib32/libxcb-keysyms.so.1 /work/out/rootfs/usr/lib32/
 
+# Same absolute path as the host payload, so one VK_DRIVER_FILES value names all three.
+TURNIP_DIR=/usr/share/armada/turnip
+default_needed=$(objdump -p /work/out/rootfs/usr/lib/libvulkan_freedreno.so | awk '$1 == "NEEDED" {print $2}' | sort)
+for variant in /src/mesa/variants/*/; do
+    id=$(basename "$variant")
+    /src/mesa/prepare-variant.sh "$id" "/tmp/turnip-$id"
+    cd "/tmp/turnip-$id"
+    build_turnip
+    out=/work/out/rootfs${TURNIP_DIR}/$id
+    for arch in x86_64 i686; do
+        install -D -m 0644 "build-$arch/src/freedreno/vulkan/libvulkan_freedreno.so" "$out/$arch/libvulkan_freedreno.so"
+        sed -E "s|\"library_path\": *\"[^\"]*\"|\"library_path\": \"${TURNIP_DIR}/${id}/${arch}/libvulkan_freedreno.so\"|" \
+            "build-$arch/src/freedreno/vulkan/freedreno_icd.$arch.json" >"$out/icd.$arch.json"
+        grep -q "\"${TURNIP_DIR}/${id}/${arch}/libvulkan_freedreno.so\"" "$out/icd.$arch.json"
+        python3 -m json.tool "$out/icd.$arch.json" >/dev/null
+    done
+    # pressure-vessel drops an ICD with an unresolvable dep; the default's set is known to load.
+    needed=$(objdump -p "$out/x86_64/libvulkan_freedreno.so" | awk '$1 == "NEEDED" {print $2}' | sort)
+    extra=$(comm -13 <(echo "$default_needed") <(echo "$needed"))
+    [ -z "$extra" ] || { echo "ERROR: variant $id needs libraries the default driver does not: $extra" >&2; exit 1; }
+done
 # container glibc == rootfs glibc (snapshot pin above), so newer symbol refs cannot load
 glibc_max=$(ldd --version | sed -n '1s/.* //p')
-for so in /work/out/rootfs/usr/lib/libvulkan_freedreno.so /work/out/rootfs/usr/lib32/libvulkan_freedreno.so; do
+for so in $(find /work/out/rootfs -name libvulkan_freedreno.so); do
     ceiling=$(objdump -T "$so" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)
     if [ "$(printf '%s\n%s\n' "$ceiling" "$glibc_max" | sort -V | tail -1)" != "$glibc_max" ]; then
         echo "ERROR: $so references GLIBC_$ceiling, newer than the rootfs glibc $glibc_max" >&2

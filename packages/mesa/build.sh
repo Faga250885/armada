@@ -56,12 +56,13 @@ fi
 
 LAST=$(grep -nE '^(Patch|Source)[0-9]*:' "$SPEC" | tail -1 | cut -d: -f1)
 [ -n "$LAST" ] || { echo 'ERROR: no Source/Patch line to anchor the patch on'; exit 1; }
-cp /work/patches/0001-disable-turnip-sparse-sync.patch $HOME/rpmbuild/SOURCES/
-sed -i "${LAST}a Patch9001:       0001-disable-turnip-sparse-sync.patch" "$SPEC"
-cp /work/patches/0002-add-a830-chip-id.patch $HOME/rpmbuild/SOURCES/
-sed -i "/^Patch9001:/a Patch9002:       0002-add-a830-chip-id.patch" "$SPEC"
-cp /work/patches/0003-ir3-disable-bindless-ubo-const-lowering.patch $HOME/rpmbuild/SOURCES/
-sed -i "/^Patch9002:/a Patch9003:       0003-ir3-disable-bindless-ubo-const-lowering.patch" "$SPEC"
+n=9000
+for patch in /work/patches/*.patch; do
+    n=$((n + 1))
+    cp "$patch" $HOME/rpmbuild/SOURCES/
+    sed -i "${LAST}a Patch${n}:       ${patch##*/}" "$SPEC"
+    LAST=$((LAST + 1))
+done
 sed -i "/^%build$/i %global build_cflags %{build_cflags} ${ARMADA_MARCH}" "$SPEC"
 sed -i "/^%build$/i %global build_cxxflags %{build_cxxflags} ${ARMADA_MARCH}" "$SPEC"
 
@@ -77,3 +78,33 @@ ccache -s
 for p in ${SUBPKGS}; do
     cp $HOME/rpmbuild/RPMS/*/${p}-${MESA_VER}-*${DIST}.*.rpm /work/out/
 done
+
+TURNIP_DIR=/usr/share/armada/turnip
+for variant in /work/variants/*/; do
+    id=$(basename "$variant")
+    src=/tmp/turnip-$id
+    /work/prepare-variant.sh "$id" "$src"
+    CFLAGS="-O2 ${ARMADA_MARCH}" CXXFLAGS="-O2 ${ARMADA_MARCH}" \
+        meson setup "$src/build" "$src" --buildtype release --prefix /usr \
+        -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=msm \
+        -Dplatforms=x11,wayland -Dglx=disabled -Degl=disabled -Dgbm=disabled \
+        -Dopengl=false -Dllvm=disabled
+    ninja -C "$src/build"
+    out=/work/out/turnip/$id
+    install -D -m 0755 "$src/build/src/freedreno/vulkan/libvulkan_freedreno.so" "$out/aarch64/libvulkan_freedreno.so"
+    sed -E "s|\"library_path\": *\"[^\"]*\"|\"library_path\": \"${TURNIP_DIR}/${id}/aarch64/libvulkan_freedreno.so\"|" \
+        "$src/build/src/freedreno/vulkan/freedreno_icd.aarch64.json" >"$out/icd.aarch64.json"
+    grep -q "\"${TURNIP_DIR}/${id}/aarch64/libvulkan_freedreno.so\"" "$out/icd.aarch64.json"
+    install -m 0644 "$src/variant.json" "$out/variant.json"
+done
+mkdir -p /work/out/turnip/stable
+printf '{"label": "Stable", "version": "%s"}\n' "${MESA_VER}" >/work/out/turnip/stable/variant.json
+
+# Mesa keys its shader cache on the build ID, so two variants sharing one would
+# share a cache.
+mkdir -p /tmp/default-turnip
+rpm2cpio /work/out/mesa-vulkan-drivers-*.rpm | cpio -idm --quiet -D /tmp/default-turnip '*/libvulkan_freedreno.so'
+build_ids=$(for so in /tmp/default-turnip/usr/lib64/libvulkan_freedreno.so /work/out/turnip/*/aarch64/libvulkan_freedreno.so; do
+    readelf -n "$so" | sed -n 's/.*Build ID: //p' | grep . || exit 1
+done)
+[ -z "$(sort <<<"$build_ids" | uniq -d)" ]

@@ -26,6 +26,8 @@ export interface GameTweak {
   name?: string;
   fexProfile?: string;
   fexConfig?: Record<string, string>;
+  // "stable" is the system driver; a game without the key follows the global pick.
+  turnipDriver?: string;
   thunks?: Record<string, boolean>;
   [key: string]: any;
 }
@@ -49,6 +51,12 @@ export interface InstalledGame {
 export interface FexProfile {
   label: string;
   config?: Record<string, string>;
+}
+
+export interface TurnipDriver {
+  id: string;
+  label: string;
+  version: string;
 }
 
 // A text in env-presets.json is either one string or one string per locale, so a
@@ -118,6 +126,7 @@ export interface Config {
   tweaks: Tweaks;
   installedGames: InstalledGame[];
   fexProfiles: Record<string, FexProfile>;
+  turnipDrivers?: TurnipDriver[];
   envPresets: EnvPreset[];
   perf?: PerfInfo;
   cpuDeviceClass: string;
