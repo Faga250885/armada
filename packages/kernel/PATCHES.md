@@ -721,6 +721,9 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `dts/qcs8550-retroidpocket-rp6.dts.patch`
   source: armada
   notes: Armada switches Pocket 6 from ROCKNIX's Odin 2 fallback to audio firmware extracted from a Pocket 6 vendor image.
+- `dts/qcs8550-retroidpocket-rpnova.dts.patch`
+  source: armada
+  notes: Armada disables the inherited Pocket 6 PWM backlight and removes its panel reference so Nova uses its panel driver’s DSI backlight.
 - `dts/qcs8550-ayn-thor.dts.patch`
   source: armada
   notes: Armada fixes the hall-sensor pinctrl, makes only the lid-open edge wake, corrects touch orientation, and enables DPU dithering on the top panel after copying `dts/qcs8550-ayn-thor.dts`.
