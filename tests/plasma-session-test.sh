@@ -131,7 +131,7 @@ expect_args \
 [[ ! -s "$log" ]] || fail "bottom touched other units: $(<"$log")"
 [[ "$(readlink "$home/plasmashellrc")" == plasmashellrc.mobile ]]
 [[ "$(<"$tmp/envmanager")" == "--apply-settings /test/home/.config/plasma-mobile:/etc/xdg offscreen" ]]
-[[ "$(envval XDG_CONFIG_DIRS)" == "$home/kdedefaults:/test/home/.config/plasma-mobile:/etc/xdg" ]]
+[[ "$(envval XDG_CONFIG_DIRS)" == /test/home/.config/plasma-mobile:/etc/xdg ]]
 [[ "$(envval PATH)" == /test/home/.local/bin:/test/home/bin:/usr/local/bin:/usr/bin ]]
 [[ "$(envval XDG_CURRENT_DESKTOP)" == KDE && "$(envval XDG_SESSION_TYPE)" == wayland ]]
 [[ "$(envval PLASMA_PLATFORM)" == phone:handset && "$(envval DISABLE_GAMESCOPE_WSI)" == 1 ]]
@@ -170,7 +170,7 @@ session "$home" bottom desktop
 args
 [[ "${actual[9]}" == "$child_env /usr/bin/plasmashell" ]]
 [[ "$(readlink "$home/plasmashellrc")" == plasmashellrc.desktop ]]
-[[ "$(envval XDG_CONFIG_DIRS)" == "$home/kdedefaults:/etc/xdg" ]]
+[[ "$(envval XDG_CONFIG_DIRS)" == /etc/xdg ]]
 ! grep -q '^PLASMA_PLATFORM=' "$tmp/env"
 
 display=()
@@ -199,7 +199,7 @@ nested_id="$(envval ARMADA_PLASMA_NESTED)"
 [[ "$(<"$log")" == "systemctl --user is-active --quiet armada-plasma-nested-*.service
 systemd-run --user --quiet --collect --unit=armada-plasma-nested-$nested_id $SESSION --restore-bottom $nested_id
 systemctl --user stop armada-bottom-screen.service" ]] || fail "unexpected handoff: $(<"$log")"
-[[ "$(envval XDG_CONFIG_DIRS)" == "/usr/share/armada/plasma/nested:$home/kdedefaults:/etc/xdg" ]]
+[[ "$(envval XDG_CONFIG_DIRS)" == /usr/share/armada/plasma/nested:/etc/xdg ]]
 ! grep -q '^QT_QPA_PLATFORM=\|^SteamAppId=' "$tmp/env"
 for file in kwinrc kwinrulesrc kdeglobals kxkbrc kcminputrc kglobalshortcutsrc; do
     [[ "$(readlink "$kwin/$file")" == "../../../$file" ]]
@@ -213,7 +213,7 @@ expect_args \
     --exit-with-session "$child_env /usr/bin/plasmashell -p org.kde.plasma.mobileshell" \
     "$child_env /usr/libexec/kf6/polkit-kde-authentication-agent-1" \
     '/usr/bin/kscreen-doctor output.X11-0.scale.1.5'
-[[ "$(envval XDG_CONFIG_DIRS)" == "/usr/share/armada/plasma/nested:$home/kdedefaults:/test/home/.config/plasma-mobile:/etc/xdg" ]]
+[[ "$(envval XDG_CONFIG_DIRS)" == /usr/share/armada/plasma/nested:/test/home/.config/plasma-mobile:/etc/xdg ]]
 printf 'saved layout\n' >"$kwin/kwinoutputconfig.json"
 session "$home" nested desktop
 args

@@ -136,7 +136,6 @@ if [[ "$shell" == mobile ]]; then
 
     QT_QPA_PLATFORM=offscreen "${ARMADA_PLASMA_MOBILE_ENVMANAGER:-/usr/bin/plasma-mobile-envmanager}" --apply-settings || true
 fi
-export XDG_CONFIG_DIRS="$config_home/kdedefaults:$XDG_CONFIG_DIRS"
 
 # Nested KWin can overwrite physical panel settings.
 kwin_home="$config_home/armada/plasma/$surface"
