@@ -138,10 +138,17 @@ def wrap_launch_options(options):
 
 
 def launch_spec(app):
-    install = app.get("install") or {}
-    kind = install.get("type")
     if app.get("desktopOnly"):
         return None
+    spec = _launch_command(app)
+    if spec and app.get("controllerTemplate"):
+        spec["controllerTemplate"] = app["controllerTemplate"]
+    return spec
+
+
+def _launch_command(app):
+    install = app.get("install") or {}
+    kind = install.get("type")
     home = str(user_home())
     name = app.get("name") or app.get("id") or "App"
     extra = (install.get("launchOptions") or "").strip()

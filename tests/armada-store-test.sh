@@ -38,6 +38,13 @@ for app in apps:
         assert "/" not in install["filename"], app["id"]
     if install.get("asset"):
         re.compile(install["asset"])
+    # Becomes controller_neptune_<name>.vdf, one of Steam's own templates.
+    template = app.get("controllerTemplate")
+    if template is not None:
+        assert re.fullmatch(r"[a-z0-9_+]+", template), app["id"]
+        assert catalog.launch_spec(app)["controllerTemplate"] == template, app["id"]
+    else:
+        assert "controllerTemplate" not in (catalog.launch_spec(app) or {}), app["id"]
     # A tool that needs Steam closed must never be offered as a Steam shortcut.
     if app.get("desktopOnly"):
         assert catalog.launch_spec(app) is None, app["id"]
