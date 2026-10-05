@@ -110,6 +110,8 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 0204-thermal-qcom-tsens-mask-lower-threshold-irqs-across-suspend.patch
 0510-soc-qcom-ice-unwind-clocks-on-resume-failure.patch
 0511-scsi-ufs-qcom-reenable-irq-on-host-reset-failure.patch
+0533-scsi-ufs-core-Add-UFSHCD_QUIRK_SKIP_DEVICE_RESET-quirk.patch
+0534-scsi-ufs-ufs-qcom-Enable-SKIP-DEVICE-RESET-Quirk.patch
 0512-PCI-qcom-skip-L23-ready-poll-on-SM8550.patch
 0513-PCI-qcom-honour-an-opp-suspend-opp-as-the-non-s2ram-memory-floor.patch
 0522-PCI-host-common-let-only-endpoints-veto-d3cold.patch

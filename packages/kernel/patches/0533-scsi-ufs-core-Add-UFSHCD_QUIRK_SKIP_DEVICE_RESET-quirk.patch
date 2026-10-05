@@ -1,0 +1,57 @@
+From 77c70de6cb7508ed0fcd11154e26a1aa283fea2a Mon Sep 17 00:00:00 2001
+From: Nitin Rawat <nitin.rawat@oss.qualcomm.com>
+Date: Mon, 1 Jun 2026 05:20:10 +0530
+Subject: [PATCH] FROMLIST: scsi: ufs: core: Add UFSHCD_QUIRK_SKIP_DEVICE_RESET
+ quirk
+
+Add a new host quirk UFSHCD_QUIRK_SKIP_DEVICE_RESET to allow host
+controller drivers to skip asserting device reset during UFS power
+down.
+
+When RST_N is asserted, the UFS device firmware wakes up and executes
+its internal reset routine. This routine initializes multiple hardware
+blocks and causing the device to draw a large curreny during this time.
+If the power rail transitions to LPM (Low Power Mode) while the device
+is still drawing this elevated current, it may trigger an
+OCP (Over Current Protection) fault in the regulator.
+
+For some UFS devices (e.g., Micron), the elevated current draw persists
+until the reset line is deasserted, making a fixed delay insufficient
+to prevent OCP. This quirk allows such devices to skip device reset
+during UFS power down. The device reset will instead be asserted as
+part of the platform shutdown sequence.
+
+Link: https://lore.kernel.org/linux-scsi/20260531235011.1052706-2-nitin.rawat@oss.qualcomm.com/
+Signed-off-by: Nitin Rawat <nitin.rawat@oss.qualcomm.com>
+Signed-off-by: Pradeep P V K <pradeep.pragallapati@oss.qualcomm.com>
+---
+ include/ufs/ufshcd.h | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/include/ufs/ufshcd.h b/include/ufs/ufshcd.h
+index 248d0a5bef407..98ea715c03051 100644
+--- a/include/ufs/ufshcd.h
++++ b/include/ufs/ufshcd.h
+@@ -812,7 +812,22 @@ enum ufshcd_quirks {
+ 	 * (EQTR) using Adapt L0L1L2L3 length which is larger than what is
+ 	 * allowed by M-PHY spec ver 6.0.
+ 	 */
++
+ 	UFSHCD_QUIRK_EXTENDED_TX_EQTR_ADAPT_LENGTH_L0L1L2L3	= 1 << 28,
++	/*
++	 * Some UFS devices keep drawing larger current after reset is
++	 * asserted until it is deasserted. Asserting device reset
++	 * during UFS power down causes the device firmware to wake up and
++	 * execute its reset routine, drawing current beyond the permissible
++	 * limit for low-power mode (LPM). This may trigger an OCP fault on
++	 * the regulator supplying power to UFS.
++	 *
++	 * Enable this quirk to skip asserting device reset during UFS power
++	 * down. This is handled only in shutdown; the device reset will be
++	 * asserted as part of the platform shutdown sequence.
++	 */
++
++	UFSHCD_QUIRK_SKIP_DEVICE_RESET			= 1 << 29,
+ };
+ 
+ enum ufshcd_caps {

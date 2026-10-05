@@ -314,6 +314,12 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0511-scsi-ufs-qcom-reenable-irq-on-host-reset-failure.patch`
   source: armada
   upstream: local
+- `patches/0533-scsi-ufs-core-Add-UFSHCD_QUIRK_SKIP_DEVICE_RESET-quirk.patch`
+  source: https://github.com/qualcomm-linux/kernel/commit/77c70de6cb7508ed0fcd11154e26a1aa283fea2a.patch
+  upstream: https://lore.kernel.org/r/20260531235011.1052706-2-nitin.rawat@oss.qualcomm.com
+- `patches/0534-scsi-ufs-ufs-qcom-Enable-SKIP-DEVICE-RESET-Quirk.patch`
+  source: https://github.com/qualcomm-linux/kernel/commit/d86d915355ae0f4d79ec0223864f41cb1c30ab70.patch
+  upstream: https://lore.kernel.org/r/20260531235011.1052706-3-nitin.rawat@oss.qualcomm.com
 - `patches/0512-PCI-qcom-skip-L23-ready-poll-on-SM8550.patch`
   source: armada
   upstream: local
