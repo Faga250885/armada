@@ -51,4 +51,5 @@ for patch in "${patches[@]}"; do
     patch -d "${dest}" -p1 --forward --no-backup-if-mismatch <"${patch}"
 done
 
+"${here}/turnip-build-id.sh" source - "${SOURCE_SHA256}" "${patches[@]}" >"${dest}/source-id"
 printf '{"label": "%s", "version": "%s"}\n' "${LABEL}" "$(tr -d '[:space:]' <"${dest}/VERSION")" >"${dest}/variant.json"

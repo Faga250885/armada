@@ -152,6 +152,8 @@ export const ptPT = {
   "compatibility.tool": "Ferramenta de compatibilidade",
   "compatibility.fexPreset": "Predefinições do FEX",
   "compatibility.turnipStable": "Estável",
+  "compatibility.turnipBuiltinNote": "Ferramentas ARM64 e x86",
+  "compatibility.turnipUserNote": "Apenas ferramentas ARM64",
   "common.advanced": "AVANÇADO",
   "compatibility.hidePerformance": "Ocultar desempenho",
   "compatibility.hideHostThunks": "Ocultar thunks do host",

@@ -26,7 +26,6 @@ export interface GameTweak {
   name?: string;
   fexProfile?: string;
   fexConfig?: Record<string, string>;
-  // "stable" is the system driver; a game without the key follows the global pick.
   turnipDriver?: string;
   thunks?: Record<string, boolean>;
   [key: string]: any;

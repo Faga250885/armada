@@ -150,6 +150,8 @@ export const en = {
   "compatibility.tool": "Compatibility Tool",
   "compatibility.fexPreset": "FEX Preset",
   "compatibility.turnipStable": "Stable",
+  "compatibility.turnipBuiltinNote": "ARM64 and x86 compatibility tools",
+  "compatibility.turnipUserNote": "ARM64 compatibility tools only",
   "common.advanced": "ADVANCED",
   "compatibility.hidePerformance": "Hide Performance",
   "compatibility.hideHostThunks": "Hide Host Thunks",

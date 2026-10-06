@@ -18,16 +18,16 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
 
 ## Variants
 
-Each `variants/<id>/` is an extra Turnip-only build. Its `VARIANT.env` names the
-Mesa source (`SOURCE_URL` + `SOURCE_SHA256`, default BASE.env's) and which of the
-patches above apply (`BASE_PATCHES`, default all), or takes both from another
-variant with `BASED_ON`. `variants/<id>/patches/` go on top.
+Each `variants/<id>/` is an extra Turnip-only build. `VARIANT.env` sets its Mesa
+source (`SOURCE_URL` + `SOURCE_SHA256`, default BASE.env's) and which patches
+above apply (`BASE_PATCHES`, default all), or takes both from another variant
+(`BASED_ON`). Its own `patches/` go on top. `devel` tracks Mesa main.
 
 ### winnative
 
 - `variants/winnative/patches/0001-tu-emulate-mesh-shaders.patch`
   source: https://github.com/WinNative-Emu/Drivers/blob/c71f600a2977a141f21a922c9ed2e14fb09b13d3/linux/patches/0001-tu-Emulate-VK_EXT_mesh_shader-with-compute.patch
-  notes: modified: rebased onto the devel pin: the shader cache hunks use the shared serializer and the render pass merge hunk follows its new signature.
+  notes: modified; rebased onto the devel pin, where the shader cache hunks use the shared serializer and the render pass merge hunk follows its new signature
 - `variants/winnative/patches/0002-ir3-support-half-wave-subgroups.patch`
   source: https://github.com/WinNative-Emu/Drivers/blob/c71f600a2977a141f21a922c9ed2e14fb09b13d3/linux/patches/0002-tu-ir3-Support-a-required-subgroup-size-of-half-a-wa.patch
   notes: offsets updated for the devel pin
@@ -39,7 +39,7 @@ variant with `BASED_ON`. `variants/<id>/patches/` go on top.
   notes: offsets updated for the devel pin
 - `variants/winnative/patches/0005-freedreno-enable-a740-ubwc-hint.patch`
   source: https://github.com/WinNative-Emu/Drivers/blob/c71f600a2977a141f21a922c9ed2e14fb09b13d3/patches/apply_a7xx_gen2_ubwc_hint.py
-  notes: modified: converted the GPU-property script to a patch
+  notes: modified; converted the GPU-property script to a patch
 - `variants/winnative/patches/0006-tu-autotune-lower-gmem-bandwidth-multiplier.patch`
   source: https://github.com/WinNative-Emu/Drivers/blob/c71f600a2977a141f21a922c9ed2e14fb09b13d3/patches/apply_balance_variant.py
-  notes: modified: converted the tuning script to a patch
+  notes: modified; converted the tuning script to a patch

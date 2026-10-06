@@ -68,6 +68,13 @@ sed -i "/^%build$/i %global build_cxxflags %{build_cxxflags} ${ARMADA_MARCH}" "$
 
 # two-pass: %generate_buildrequires emits a nosrc; install its BRs then build for real
 dnf -y builddep "$SPEC"
+
+# The SRPM adds the spec's own patches and options. No compiler version: it changes unprompted.
+TOOLCHAIN_ID="${BUILDER_IMAGE} ${ARMADA_MARCH}"
+stable_source=$(/work/turnip-build-id.sh source "${SRPM_NVR}" "${SOURCE_SHA256}" /work/patches/*.patch)
+stable_id=$(/work/turnip-build-id.sh aarch64 "${TOOLCHAIN_ID}" "${stable_source}")
+sed -i "/^%meson \\\\$/a \\  -Dtu-build-id=${stable_id} \\\\" "$SPEC"
+grep -q -- "-Dtu-build-id=${stable_id}" "$SPEC"
 rpmbuild -bb --define "dist ${DIST}" "$SPEC" || true
 NOSRC=$(find "$HOME/rpmbuild/SRPMS" -maxdepth 1 -type f \
     -name "mesa-${MESA_VER}-*${DIST}.buildreqs.nosrc.rpm" -print -quit)
@@ -80,15 +87,20 @@ for p in ${SUBPKGS}; do
 done
 
 TURNIP_DIR=/usr/share/armada/turnip
+build_ids="${stable_id}"
+turnip_meson=(--buildtype release --prefix /usr
+    -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=msm
+    -Dplatforms=x11,wayland -Dglx=disabled -Degl=disabled -Dgbm=disabled
+    -Dopengl=false -Dllvm=disabled)
 for variant in /work/variants/*/; do
     id=$(basename "$variant")
     src=/tmp/turnip-$id
     /work/prepare-variant.sh "$id" "$src"
+    source_id=$(cat "$src/source-id")
+    variant_id=$(/work/turnip-build-id.sh aarch64 "${TOOLCHAIN_ID} -O2 ${turnip_meson[*]}" "${source_id}")
+    build_ids+=$'\n'"${variant_id}"
     CFLAGS="-O2 ${ARMADA_MARCH}" CXXFLAGS="-O2 ${ARMADA_MARCH}" \
-        meson setup "$src/build" "$src" --buildtype release --prefix /usr \
-        -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=msm \
-        -Dplatforms=x11,wayland -Dglx=disabled -Degl=disabled -Dgbm=disabled \
-        -Dopengl=false -Dllvm=disabled
+        meson setup "$src/build" "$src" "${turnip_meson[@]}" -Dtu-build-id="${variant_id}"
     ninja -C "$src/build"
     out=/work/out/turnip/$id
     install -D -m 0755 "$src/build/src/freedreno/vulkan/libvulkan_freedreno.so" "$out/aarch64/libvulkan_freedreno.so"
@@ -100,11 +112,5 @@ done
 mkdir -p /work/out/turnip/stable
 printf '{"label": "Stable", "version": "%s"}\n' "${MESA_VER}" >/work/out/turnip/stable/variant.json
 
-# Mesa keys its shader cache on the build ID, so two variants sharing one would
-# share a cache.
-mkdir -p /tmp/default-turnip
-rpm2cpio /work/out/mesa-vulkan-drivers-*.rpm | cpio -idm --quiet -D /tmp/default-turnip '*/libvulkan_freedreno.so'
-build_ids=$(for so in /tmp/default-turnip/usr/lib64/libvulkan_freedreno.so /work/out/turnip/*/aarch64/libvulkan_freedreno.so; do
-    readelf -n "$so" | sed -n 's/.*Build ID: //p' | grep . || exit 1
-done)
-[ -z "$(sort <<<"$build_ids" | uniq -d)" ]
+# Two drivers sharing an identity would share a shader cache.
+[ -z "$(sort <<<"${build_ids}" | uniq -d)" ]

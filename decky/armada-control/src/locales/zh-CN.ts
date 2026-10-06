@@ -152,6 +152,8 @@ export const zhCN = {
   "compatibility.tool": "兼容性工具",
   "compatibility.fexPreset": "FEX 预设",
   "compatibility.turnipStable": "稳定版",
+  "compatibility.turnipBuiltinNote": "ARM64 和 x86 兼容性工具",
+  "compatibility.turnipUserNote": "仅 ARM64 兼容性工具",
   "common.advanced": "高级设置",
   "compatibility.hidePerformance": "隐藏性能调优",
   "compatibility.hideHostThunks": "隐藏主机 Thunk",

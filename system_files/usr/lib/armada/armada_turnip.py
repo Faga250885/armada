@@ -6,12 +6,11 @@ import stat
 
 
 SYSTEM_DIR = pathlib.Path("/usr/share/armada/turnip")
-# The system Mesa: no override, and the only driver gamescope itself uses.
+# The system Mesa; selecting it overrides nothing.
 STABLE = "stable"
 USER_PREFIX = "user:"
 LIBRARY = "libvulkan_freedreno.so"
-# A folder name as unzipped, minus what would break a path or the colon-separated
-# manifest list.
+# Any folder name that cannot break a path or the colon-separated manifest list.
 NAME = re.compile(r"[^/:.][^/:]{0,99}")
 MAX_LIBRARY_SIZE = 256 * 1024 * 1024
 
@@ -21,8 +20,7 @@ def user_dir(home):
 
 
 def _read_regular(path, limit):
-    # The plugin lists a user-writable directory as root: never block on a FIFO,
-    # follow a link, or read without bound.
+    # Runs as root over a user-writable tree: never block, follow a link, or read unbounded.
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
     except OSError:
@@ -40,8 +38,7 @@ def _read_regular(path, limit):
 
 
 def is_arm64_glibc(path):
-    # Android Turnip zips ship the same file name; one of those, or an empty copy,
-    # would leave the game with no Vulkan driver at all.
+    # An Android build ships under the same file name and would leave a game with no driver.
     data = _read_regular(path, MAX_LIBRARY_SIZE)
     return (data is not None and len(data) >= 64 and data[:5] == b"\x7fELF\x02"
             and data[18:20] == b"\xb7\x00" and b"libc.so.6\0" in data)
@@ -52,8 +49,7 @@ def system_manifests(name):
     if not (NAME.fullmatch(name) and (variant / "icd.aarch64.json").is_file()
             and (variant / "aarch64" / LIBRARY).is_file()):
         return None
-    # arm64 games and thunked x86 Vulkan load the host driver, unthunked x86 loads
-    # the guest rootfs ones; each loader skips the manifests it cannot use
+    # one list for every loader: each skips the manifests it cannot open or load
     return [str(variant / f"icd.{arch}.json") for arch in ("aarch64", "x86_64", "i686")]
 
 

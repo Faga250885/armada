@@ -4,7 +4,6 @@ set -euxo pipefail
 # Patched Turnip includes the Mesa #14656 VM_BIND fix.
 dnf5 -y install --setopt=install_weak_deps=False /packages/mesa/mesa-*.fc44.armada.*.rpm
 
-# Extra Turnip builds a game can be pointed at; the x86 halves ship in ArmadaMesa.sqsh.
 mkdir -p /usr/share/armada
 cp -a /packages/mesa/turnip /usr/share/armada/turnip
 # A separate rechunk component keeps a driver bump from invalidating unrelated layers.

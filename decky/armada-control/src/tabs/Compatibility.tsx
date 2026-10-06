@@ -617,7 +617,9 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
     ...turnipDrivers.map((driver) => ({ data: driver.id, label: turnipLabel(driver) })),
   ];
   const ownTurnip = editingDefault ? tweaks.global.turnipDriver : gameSettings.turnipDriver;
-  const turnipValue = turnipDrivers.some((driver) => driver.id === ownTurnip) ? String(ownTurnip) : editingDefault ? "stable" : "";
+  const knownTurnip = (id: unknown) => turnipDrivers.some((driver) => driver.id === id);
+  // A saved driver that is no longer installed launches on Stable, so show Stable.
+  const turnipValue = knownTurnip(ownTurnip) ? String(ownTurnip) : editingDefault || ownTurnip ? "stable" : "";
   const thunks: Record<string, boolean> = values.thunks || {};
   const setThunk = (module: string, on: boolean) => patchSettings({ thunks: { ...thunks, [module]: on } });
 
@@ -927,6 +929,7 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
         {showDrivers && turnipDrivers.length > 1 ? (
           <div className="armada-advanced-group">
             <SelectEdit label="Turnip" value={turnipValue} options={turnipOptions} onChange={(id: any) => patchSettings({ turnipDriver: String(id) || undefined })} />
+            {turnipValue ? <div className="armada-compat-note">{t(turnipValue.startsWith("user:") ? "compatibility.turnipUserNote" : "compatibility.turnipBuiltinNote")}</div> : null}
           </div>
         ) : null}
       </PanelSection>

@@ -64,19 +64,24 @@ endian = 'little'
 EOF
 
 # baseline -march like the rootfs userspace; FEX emulates AVX in slower 128-bit halves
-common='--buildtype release --prefix /usr
+common=(--buildtype release --prefix /usr
     -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=msm
     -Dplatforms=x11,wayland -Dglx=disabled -Degl=disabled -Dgbm=disabled
-    -Dopengl=false -Dllvm=disabled -Dallow-fallback-for=libdrm'
+    -Dopengl=false -Dllvm=disabled -Dallow-fallback-for=libdrm)
+TOOLCHAIN_ID="${GUEST_BUILDER_IMAGE} ${GUEST_SNAPSHOT} -march=x86-64 ${common[*]}"
 build_turnip() {
+    local id64 id32
+    id64=$(/src/mesa/turnip-build-id.sh x86_64 "${TOOLCHAIN_ID}" "$1")
+    id32=$(/src/mesa/turnip-build-id.sh i686 "${TOOLCHAIN_ID}" "$1")
     CFLAGS='-march=x86-64' CXXFLAGS='-march=x86-64' \
-        meson setup build-x86_64 --libdir lib $common
+        meson setup build-x86_64 --libdir lib "${common[@]}" -Dtu-build-id="${id64}"
     ninja -C build-x86_64
     CFLAGS='-march=x86-64' CXXFLAGS='-march=x86-64' \
-        meson setup build-i686 --libdir lib32 --cross-file /tmp/cross32 $common
+        meson setup build-i686 --libdir lib32 --cross-file /tmp/cross32 "${common[@]}" -Dtu-build-id="${id32}"
     ninja -C build-i686
 }
-build_turnip
+stable_source=$(/src/mesa/turnip-build-id.sh source - "${SOURCE_SHA256}" /src/mesa/patches/*.patch)
+build_turnip "${stable_source}"
 
 install -m 0644 build-x86_64/src/freedreno/vulkan/libvulkan_freedreno.so    /work/out/rootfs/usr/lib/
 install -m 0644 build-x86_64/src/freedreno/vulkan/freedreno_icd.x86_64.json /work/out/rootfs/usr/share/vulkan/icd.d/
@@ -95,7 +100,8 @@ for variant in /src/mesa/variants/*/; do
     id=$(basename "$variant")
     /src/mesa/prepare-variant.sh "$id" "/tmp/turnip-$id"
     cd "/tmp/turnip-$id"
-    build_turnip
+    source_id=$(cat source-id)
+    build_turnip "${source_id}"
     out=/work/out/rootfs${TURNIP_DIR}/$id
     for arch in x86_64 i686; do
         install -D -m 0644 "build-$arch/src/freedreno/vulkan/libvulkan_freedreno.so" "$out/$arch/libvulkan_freedreno.so"
@@ -104,7 +110,7 @@ for variant in /src/mesa/variants/*/; do
         grep -q "\"${TURNIP_DIR}/${id}/${arch}/libvulkan_freedreno.so\"" "$out/icd.$arch.json"
         python3 -m json.tool "$out/icd.$arch.json" >/dev/null
     done
-    # pressure-vessel drops an ICD with an unresolvable dep; the default's set is known to load.
+    # The default driver's dependencies are the ones known to load in the rootfs.
     needed=$(objdump -p "$out/x86_64/libvulkan_freedreno.so" | awk '$1 == "NEEDED" {print $2}' | sort)
     extra=$(comm -13 <(echo "$default_needed") <(echo "$needed"))
     [ -z "$extra" ] || { echo "ERROR: variant $id needs libraries the default driver does not: $extra" >&2; exit 1; }

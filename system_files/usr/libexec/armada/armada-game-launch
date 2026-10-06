@@ -22,8 +22,7 @@ BASE_FEX_CONFIG = pathlib.Path("/usr/share/fex-emu/Config.json")
 FEX_PROFILES_CONFIG = pathlib.Path("/usr/share/armada/fex-profiles.json")
 PROTON_INJECT_SRC = pathlib.Path("/usr/share/armada/proton-inject/x86_64-linux-gnu")
 SYSTEM_EXEC_PATHS = ("/usr/bin", "/usr/local/bin", "/bin")
-# The guest rootfs's own Turnip, for x86 Vulkan that bypasses the host thunk. Absent on
-# the host, so native loaders skip them.
+# The guest rootfs's stock Turnip, for x86 games; absent on the host, so native loaders skip it.
 GUEST_TURNIP_MANIFESTS = (
     "/usr/share/vulkan/icd.d/freedreno_icd.x86_64.json",
     "/usr/share/vulkan/icd.d/freedreno_icd.i686.json",
