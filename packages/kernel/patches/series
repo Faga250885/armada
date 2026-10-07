@@ -167,7 +167,9 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0009-qcom-spmi-haptics.patch
 0008-retroid-gamepad.patch
 0013-add-force-feedback.patch
+0008a-input-retroid-keep-trigger-conversion-independent-of-calibration.patch
 0060_Mangmi-Pocket-Max-SPI-joypad.patch
+0060b-input-mangmi-pocket-max-keep-trigger-conversion-independent-of-calibration.patch
 0063_Mangmi-Pocket-Max-HL7139-charge-pump.patch
 0011-qcom-pm8150b-charger.patch
 0005-sm8250-uart.patch

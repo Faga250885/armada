@@ -85,6 +85,7 @@ export const ptBR = {
   "calibration.rightStick": "Analógico direito",
   "common.close": "Fechar",
   "calibration.save": "Salvar calibração",
+  "calibration.applying": "Aplicando...",
   "calibration.start": "Iniciar calibração",
   "calibration.resetDefaults": "Restaurar padrões",
   "compatibility.invalidCoreEntry": "Entrada inválida: {value}",

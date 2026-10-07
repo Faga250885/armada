@@ -85,6 +85,7 @@ export const zhCN = {
   "calibration.rightStick": "右摇杆",
   "common.close": "关闭",
   "calibration.save": "保存校准",
+  "calibration.applying": "正在应用...",
   "calibration.start": "开始校准",
   "calibration.resetDefaults": "恢复默认校准",
   "compatibility.invalidCoreEntry": "无效项目：{value}",
