@@ -228,7 +228,7 @@ export const zhCN = {
   "trackpads.modeSimple": "底部两角",
   "trackpads.modeCorners": "四个角",
   "trackpads.modeFloating": "触点动态定位",
-  "trackpads.modeHalves": "分屏（不可见）",
+  "trackpads.modeHalves": "分屏",
   "trackpads.modeSimpleDescription": "在两个底角各放置一个固定触控板。",
   "trackpads.modeCornersDescription": "每个角各有一个区域；同一侧的两个区域控制同一个触控板。",
   "trackpads.modeFloatingDescription": "首次触摸任一半屏时，会在手指下方放置该侧触控板。",

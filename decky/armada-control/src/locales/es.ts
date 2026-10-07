@@ -10,7 +10,7 @@ export const es: Record<TranslationKey, string> = {
   "trackpads.modeSimple": "Esquinas inferiores",
   "trackpads.modeCorners": "Cuatro esquinas",
   "trackpads.modeFloating": "Dinámicos al toque",
-  "trackpads.modeHalves": "Pantalla dividida (invisible)",
+  "trackpads.modeHalves": "Pantalla dividida",
   "trackpads.modeSimpleDescription": "Un trackpad fijo en cada esquina inferior.",
   "trackpads.modeCornersDescription": "Un trackpad en cada esquina; las dos zonas de cada lado controlan el mismo pad.",
   "trackpads.modeFloatingDescription": "El primer toque en cada mitad coloca el trackpad de ese lado bajo el dedo.",

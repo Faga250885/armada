@@ -228,7 +228,7 @@ export const ptPT = {
   "trackpads.modeSimple": "Cantos inferiores",
   "trackpads.modeCorners": "Quatro cantos",
   "trackpads.modeFloating": "Dinâmicos ao toque",
-  "trackpads.modeHalves": "Ecrã dividido (invisível)",
+  "trackpads.modeHalves": "Ecrã dividido",
   "trackpads.modeSimpleDescription": "Um trackpad fixo em cada canto inferior.",
   "trackpads.modeCornersDescription": "Um trackpad em cada canto; as duas zonas de cada lado controlam o mesmo pad.",
   "trackpads.modeFloatingDescription": "O primeiro toque em cada metade posiciona o trackpad desse lado sob o dedo.",

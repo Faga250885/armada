@@ -226,7 +226,7 @@ export const en = {
   "trackpads.modeSimple": "Bottom Corners",
   "trackpads.modeCorners": "Four Corners",
   "trackpads.modeFloating": "Dynamic at Touch",
-  "trackpads.modeHalves": "Split Screen (Invisible)",
+  "trackpads.modeHalves": "Split Screen",
   "trackpads.modeSimpleDescription": "One fixed trackpad in each bottom corner.",
   "trackpads.modeCornersDescription": "A trackpad in every corner; both zones on each side control the same pad.",
   "trackpads.modeFloatingDescription": "The first touch in either half places that side's trackpad under your finger.",
