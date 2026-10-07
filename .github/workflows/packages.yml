@@ -42,6 +42,7 @@ jobs:
           set -euo pipefail
           owner="${{ github.repository_owner }}"
           repo="ghcr.io/${owner,,}/armada/pkg"
+          upstream_repo="ghcr.io/armada-os/armada/pkg"
           echo "${GH_TOKEN}" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
 
           matrix='[]'
@@ -53,6 +54,7 @@ jobs:
             [ -f "${dir}/build.sh" ] || continue
             hash="$(packages/package-hash.sh "${pkg}")"
             ref="${repo}/${pkg}:${hash}"
+            upstream_ref="${upstream_repo}/${pkg}:${hash}"
 
             case "${pkg}" in
               mesa-android|lepton|mesa-x86) runner=ubuntu-24.04 ;;
@@ -61,6 +63,10 @@ jobs:
 
             if skopeo inspect --raw "docker://${ref}" >/dev/null 2>&1; then
               echo "::notice::${pkg} already built (${hash})"
+            elif [ "${{ github.event.repository.fork }}" = true ] &&
+                 skopeo inspect --raw "docker://${upstream_ref}" >/dev/null 2>&1; then
+              ref="${upstream_ref}"
+              echo "::notice::${pkg} reuses upstream package (${hash})"
             else
               echo "::notice::${pkg} needs building (${hash})"
               matrix="$(jq -c --arg p "${pkg}" --arg r "${runner}" --arg h "${hash}" \

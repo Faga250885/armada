@@ -89,6 +89,10 @@ jobs:
 
       - name: Check signing key
         run: |
+          if [ "${{ github.event.repository.fork }}" = true ]; then
+            echo "::warning::Fork test build will be published unsigned."
+            exit 0
+          fi
           if [ -z "${{ secrets.SIGNING_SECRET }}" ]; then
             echo "::error::SIGNING_SECRET is not set — refusing to publish an unsigned image (devices verify ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }})."
             exit 1
@@ -302,7 +306,7 @@ jobs:
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
 
       - name: Publish channel tags
-        if: env.HAVE_SIGNING_SECRET == 'true'
+        if: env.HAVE_SIGNING_SECRET == 'true' || github.event.repository.fork == true
         run: |
           set -euo pipefail
           IMAGE_FULL="${IMAGE_REGISTRY}/${IMAGE_NAME}"
@@ -319,7 +323,7 @@ jobs:
             fi
           done
           {
-            printf '### Signed container published\n\n'
+            printf '### Container published\n\n'
             printf 'Digest: `%s@%s`\n\n' "${IMAGE_FULL}" "${{ steps.push.outputs.digest }}"
             printf 'Promote this exact build with source: `build-%s-%s-%s`\n' \
               "${{ steps.version.outputs.version }}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
