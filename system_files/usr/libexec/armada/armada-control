@@ -530,7 +530,7 @@ def action_set_virtual_trackpads(request):
     required = set(VIRTUAL_TRACKPADS_DEFAULTS)
     if set(requested) != required:
         raise ValueError("incomplete virtual trackpad configuration")
-    for key in ("leftEnabled", "rightEnabled", "tapToClick"):
+    for key in ("leftEnabled", "rightEnabled", "fourPads", "tapToClick"):
         if not isinstance(requested[key], bool):
             raise ValueError(f"invalid {key}")
     for key, (minimum, maximum) in VIRTUAL_TRACKPAD_NUMBER_RANGES.items():
@@ -559,6 +559,8 @@ def action_get_virtual_trackpads_state(request):
     return {
         "leftActive": bool(state.get("leftActive")),
         "rightActive": bool(state.get("rightActive")),
+        "leftCorner": state.get("leftCorner") if state.get("leftCorner") in ("top", "bottom") else "bottom",
+        "rightCorner": state.get("rightCorner") if state.get("rightCorner") in ("top", "bottom") else "bottom",
     }
 
 

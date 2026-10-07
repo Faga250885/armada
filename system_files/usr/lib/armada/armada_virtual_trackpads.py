@@ -1,6 +1,7 @@
 DEFAULT_CONFIG = {
     "leftEnabled": False,
     "rightEnabled": False,
+    "fourPads": False,
     "tapToClick": True,
     "leftSize": 35,
     "rightSize": 35,
@@ -26,7 +27,7 @@ def sanitize_config(value):
     result = dict(DEFAULT_CONFIG)
     if not isinstance(value, dict):
         return result
-    for key in ("leftEnabled", "rightEnabled", "tapToClick"):
+    for key in ("leftEnabled", "rightEnabled", "fourPads", "tapToClick"):
         if isinstance(value.get(key), bool):
             result[key] = value[key]
     for key, (minimum, maximum) in NUMBER_RANGES.items():
@@ -58,4 +59,20 @@ def trackpad_at(x, y, config, aspect_ratio=16 / 9):
         top = 1.0 - height
         if left <= x <= left + width and top <= y <= 1.0:
             return side, clamp((x - left) / width), clamp((y - top) / height)
+    return None
+
+
+def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
+    """Return (side, corner, local_x, local_y) for an enabled pad zone."""
+    for side in ("left", "right"):
+        if not config[f"{side}Enabled"]:
+            continue
+        height = config[f"{side}Size"] / 100.0
+        width = height / aspect_ratio
+        left = 0.0 if side == "left" else 1.0 - width
+        corners = ("top", "bottom") if config["fourPads"] else ("bottom",)
+        for corner in corners:
+            top = 0.0 if corner == "top" else 1.0 - height
+            if left <= x <= left + width and top <= y <= top + height:
+                return side, corner, clamp((x - left) / width), clamp((y - top) / height)
     return None

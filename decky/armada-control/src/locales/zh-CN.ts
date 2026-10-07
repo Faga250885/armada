@@ -224,6 +224,8 @@ export const zhCN = {
   "common.brightness": "亮度",
   "common.color": "颜色",
   "trackpads.title": "虚拟触控板",
+  "trackpads.fourPads": "四角触控区域",
+  "trackpads.fourPadsDescription": "每侧增加顶部和底部区域。左侧两个区域控制左触控板，右侧两个区域控制右触控板。",
   "trackpads.left": "左触控板",
   "trackpads.right": "右触控板",
   "trackpads.leftSize": "左侧大小 (%)",

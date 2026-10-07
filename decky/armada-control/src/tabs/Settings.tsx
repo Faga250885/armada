@@ -19,7 +19,6 @@ import {
   setSwipeGesturesEnabled as applySwipeGesturesEnabled,
 } from "../backend";
 import { openCalibration } from "../components/Calibration";
-import { Trackpads } from "./Trackpads";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import { useDebouncedApply } from "../hooks/useDebouncedApply";
 import { t, translateLabel } from "../i18n";
@@ -198,7 +197,6 @@ export function Settings({ config, setConfig }: {
           options={(config.controllerTypes || []).map((option) => ({ ...option, label: translateLabel(option.label) }))}
           onChange={setControllerType}
         />
-        <Trackpads config={config} setConfig={setConfig} />
         <ButtonItem layout="below" onClick={openCalibration}>{t("calibration.launch")}</ButtonItem>
       </PanelSection>
       <PanelSection title={t("settings.system")}>

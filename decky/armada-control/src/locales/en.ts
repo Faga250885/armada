@@ -222,6 +222,8 @@ export const en = {
   "common.brightness": "Brightness",
   "common.color": "Color",
   "trackpads.title": "Virtual Trackpads",
+  "trackpads.fourPads": "Four Corner Zones",
+  "trackpads.fourPadsDescription": "Adds a top and bottom zone on each side. Both left zones control the left pad; both right zones control the right pad.",
   "trackpads.left": "Left Trackpad",
   "trackpads.right": "Right Trackpad",
   "trackpads.leftSize": "Left Size (%)",

@@ -110,6 +110,7 @@ export interface VirtualTrackpadsConfig {
   supported: boolean;
   leftEnabled: boolean;
   rightEnabled: boolean;
+  fourPads: boolean;
   tapToClick: boolean;
   leftSize: number;
   rightSize: number;
@@ -121,6 +122,8 @@ export interface VirtualTrackpadsConfig {
 export interface VirtualTrackpadsState {
   leftActive: boolean;
   rightActive: boolean;
+  leftCorner: "top" | "bottom";
+  rightCorner: "top" | "bottom";
 }
 
 export interface GameRef {

@@ -224,6 +224,8 @@ export const ptPT = {
   "common.brightness": "Brilho",
   "common.color": "Cor",
   "trackpads.title": "Trackpads virtuais",
+  "trackpads.fourPads": "Quatro zonas nos cantos",
+  "trackpads.fourPadsDescription": "Adiciona uma zona superior e inferior de cada lado. As duas zonas esquerdas controlam o trackpad esquerdo; as direitas controlam o direito.",
   "trackpads.left": "Trackpad esquerdo",
   "trackpads.right": "Trackpad direito",
   "trackpads.leftSize": "Tamanho esquerdo (%)",

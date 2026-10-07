@@ -3,13 +3,20 @@ import { createPortal } from "react-dom";
 import { getVirtualTrackpadsState } from "../backend";
 import type { VirtualTrackpadsConfig, VirtualTrackpadsState } from "../types";
 
-const EMPTY: VirtualTrackpadsState = { leftActive: false, rightActive: false };
+const EMPTY: VirtualTrackpadsState = {
+  leftActive: false,
+  rightActive: false,
+  leftCorner: "bottom",
+  rightCorner: "bottom",
+};
 const HOLD_MS = 3000;
 
 export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsConfig }) {
   const [active, setActive] = useState(EMPTY);
   const [visible, setVisible] = useState(EMPTY);
+  const [previewing, setPreviewing] = useState(false);
   const hideTimers = useRef<Record<string, number>>({});
+  const previewTimer = useRef<number | null>(null);
   const enabled = config.leftEnabled || config.rightEnabled;
 
   useEffect(() => {
@@ -30,13 +37,27 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
   }, [enabled]);
 
   useEffect(() => {
+    const preview = () => {
+      setPreviewing(true);
+      if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+      previewTimer.current = window.setTimeout(() => setPreviewing(false), HOLD_MS);
+    };
+    window.addEventListener("armada-trackpads-preview", preview);
+    return () => {
+      window.removeEventListener("armada-trackpads-preview", preview);
+      if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
     for (const side of ["left", "right"] as const) {
       const key = `${side}Active` as const;
+      const cornerKey = `${side}Corner` as const;
       const sideEnabled = config[`${side}Enabled` as const];
       const oldTimer = hideTimers.current[side];
       if (oldTimer) window.clearTimeout(oldTimer);
       if (active[key] && sideEnabled) {
-        setVisible((current) => ({ ...current, [key]: true }));
+        setVisible((current) => ({ ...current, [key]: true, [cornerKey]: active[cornerKey] }));
       } else if (visible[key]) {
         hideTimers.current[side] = window.setTimeout(() => {
           setVisible((current) => ({ ...current, [key]: false }));
@@ -49,17 +70,23 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
   }, [active.leftActive, active.rightActive, config.leftEnabled, config.rightEnabled]);
 
   if (!enabled || typeof document === "undefined") return null;
-  const pad = (side: "left" | "right") => {
+  const pad = (side: "left" | "right", corner: "top" | "bottom") => {
     const sideEnabled = config[`${side}Enabled` as const];
-    const shown = visible[`${side}Active` as const] && sideEnabled;
-    const pressed = active[`${side}Active` as const] && sideEnabled;
-    const dotAlpha = (config.backgroundOpacity / 100) * (pressed ? 1 : 0.45);
+    const selectedCorner = active[`${side}Active` as const]
+      ? active[`${side}Corner` as const]
+      : visible[`${side}Corner` as const];
+    const cornerAvailable = !config.fourPads ? corner === "bottom" : true;
+    const shown = sideEnabled && cornerAvailable && (
+      previewing || (visible[`${side}Active` as const] && selectedCorner === corner)
+    );
+    const dotAlpha = config.backgroundOpacity / 100;
     return (
       <div
+        key={`${side}-${corner}`}
         aria-hidden="true"
         style={{
           position: "absolute",
-          bottom: 0,
+          [corner]: 0,
           [side]: 0,
           height: `${config[`${side}Size` as const]}vh`,
           aspectRatio: "1 / 1",
@@ -68,20 +95,20 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
           borderRadius: "12px",
           backgroundImage: `radial-gradient(circle, rgba(255,255,255,${dotAlpha}) 0 2px, transparent 2.5px)`,
           backgroundSize: "12px 12px",
-          boxShadow: pressed ? `inset 0 0 22px rgba(255,255,255,${dotAlpha * 0.8})` : "none",
+          boxShadow: "none",
           opacity: shown ? 1 : 0,
-          transform: pressed ? "scale(0.985)" : "scale(1)",
-          transformOrigin: `${side} bottom`,
-          transition: "opacity 280ms ease-in-out, transform 100ms ease-out, box-shadow 140ms ease-out, background-image 140ms ease-out",
-          willChange: "opacity, transform",
+          transition: "opacity 280ms ease-in-out",
+          willChange: "opacity",
         }}
       />
     );
   };
   return createPortal(
     <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 2147483647 }}>
-      {pad("left")}
-      {pad("right")}
+      {pad("left", "top")}
+      {pad("left", "bottom")}
+      {pad("right", "top")}
+      {pad("right", "bottom")}
     </div>,
     document.body,
   );

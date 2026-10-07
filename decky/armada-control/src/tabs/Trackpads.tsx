@@ -23,6 +23,7 @@ export function Trackpads({ config, setConfig }: {
   const update = (change: Partial<EditableTrackpads>, immediate = false) => {
     const next = { ...config.virtualTrackpads, ...change };
     setConfig((current) => current ? { ...current, virtualTrackpads: next } : current);
+    window.dispatchEvent(new Event("armada-trackpads-preview"));
     if (timer.current !== null) window.clearTimeout(timer.current);
     const save = () => {
       const { supported: _supported, ...payload } = next;
@@ -52,6 +53,12 @@ export function Trackpads({ config, setConfig }: {
   return (
     <>
       <div className="armada-subheader">{t("trackpads.title")}</div>
+        <ToggleRow
+          label={t("trackpads.fourPads")}
+          description={t("trackpads.fourPadsDescription")}
+          value={pads.fourPads}
+          onChange={(fourPads) => update({ fourPads }, true)}
+        />
         <ToggleRow
           label={t("trackpads.left")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
