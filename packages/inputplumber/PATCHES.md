@@ -8,6 +8,6 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0002-fix-force-feedback-reset-effects-when-replacing-targets.patch`
   source: armada
-- `patches/0003-pr746.patch`
+- `patches/0003-feat-Hardware-Support-Add-AYN-Thor-Lite.patch`
   source: https://github.com/ShadowBlip/InputPlumber/pull/746
   notes: AYN Thor Lite support
