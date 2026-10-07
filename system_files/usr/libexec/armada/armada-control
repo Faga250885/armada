@@ -533,6 +533,10 @@ def action_set_virtual_trackpads(request):
     for key in ("enabled", "blockTouchscreen", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
         if not isinstance(requested[key], bool):
             raise ValueError(f"invalid {key}")
+    requested = dict(requested)
+    requested["tapToClick"] = True
+    if requested["blockTouchscreen"]:
+        requested["enabled"] = False
     if requested["mode"] not in ("simple", "corners", "floating", "halves"):
         raise ValueError("invalid mode")
     for key, (minimum, maximum) in VIRTUAL_TRACKPAD_NUMBER_RANGES.items():

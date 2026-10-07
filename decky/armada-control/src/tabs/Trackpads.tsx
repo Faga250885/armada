@@ -66,8 +66,16 @@ export function Trackpads({ config, setConfig }: {
           value={pads.enabled}
           disabled={!deckControllerSelected}
           onChange={(enabled) => update(enabled && !pads.leftEnabled && !pads.rightEnabled
-            ? { enabled, leftEnabled: true, rightEnabled: true }
-            : { enabled }, true)}
+            ? { enabled, blockTouchscreen: false, leftEnabled: true, rightEnabled: true }
+            : { enabled, ...(enabled ? { blockTouchscreen: false } : {}) }, true)}
+        />
+        <ToggleRow
+          label={t("trackpads.blockTouchscreen")}
+          description={t("trackpads.blockTouchscreenDescription")}
+          value={pads.blockTouchscreen}
+          onChange={(blockTouchscreen) => update(blockTouchscreen
+            ? { blockTouchscreen, enabled: false }
+            : { blockTouchscreen }, true)}
         />
         <SelectEdit
           label={t("trackpads.mode")}
@@ -118,13 +126,6 @@ export function Trackpads({ config, setConfig }: {
           />
       <div className="armada-subheader">{t("trackpads.feedback")}</div>
         <ToggleRow
-          label={t("trackpads.tapToClick")}
-          description={t("trackpads.tapToClickDescription")}
-          value={pads.tapToClick}
-          disabled={settingsDisabled || splitScreen}
-          onChange={(tapToClick) => update({ tapToClick }, true)}
-        />
-        <ToggleRow
           label={t("trackpads.limitToBounds")}
           description={t("trackpads.limitToBoundsDescription")}
           value={pads.limitToBounds}
@@ -162,13 +163,6 @@ export function Trackpads({ config, setConfig }: {
         </>
         <Field label={t("trackpads.touchscreenNotice")} />
         <Field label={t("trackpads.deckTargetNotice")} />
-      <div className="armada-subheader">{t("trackpads.touchscreen")}</div>
-        <ToggleRow
-          label={t("trackpads.blockTouchscreen")}
-          description={t("trackpads.blockTouchscreenDescription")}
-          value={pads.blockTouchscreen}
-          onChange={(blockTouchscreen) => update({ blockTouchscreen }, true)}
-        />
     </>
   );
 }

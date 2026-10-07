@@ -45,6 +45,10 @@ def sanitize_config(value):
     if "enabled" not in value and (result["leftEnabled"] or result["rightEnabled"]):
         # Older images used the side toggles as the implicit master switch.
         result["enabled"] = True
+    # A short tap always represents the physical click of a Steam Deck pad.
+    result["tapToClick"] = True
+    if result["blockTouchscreen"]:
+        result["enabled"] = False
     return result
 
 

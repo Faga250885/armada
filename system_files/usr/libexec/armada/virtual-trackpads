@@ -301,6 +301,7 @@ class VirtualTrackpads:
             point["origin"] = (local_x, local_y)
             point["velocity"] = (0.0, 0.0)
             point["motionAt"] = time.monotonic()
+            point["hapticTravel"] = 0.0
             self.write_state()
             self.haptic()
         else:
@@ -327,6 +328,7 @@ class VirtualTrackpads:
                 point["sent"] = resumed_coordinates
                 point["velocity"] = (0.0, 0.0)
                 point["motionAt"] = time.monotonic()
+                point["hapticTravel"] = 0.0
                 point["started"] = time.monotonic()
                 self.write_state()
                 self.haptic()
@@ -336,8 +338,10 @@ class VirtualTrackpads:
             old = point.get("sent")
             now = time.monotonic()
             previous_motion_at = point.get("motionAt")
+            motion_distance = 0.0
             if old is not None and previous_motion_at is not None:
                 elapsed = max(0.001, now - previous_motion_at)
+                motion_distance = ((local_x - old[0]) ** 2 + (local_y - old[1]) ** 2) ** 0.5
                 instant_x = (local_x - old[0]) / elapsed
                 instant_y = (local_y - old[1]) / elapsed
                 old_velocity = point.get("velocity", (0.0, 0.0))
@@ -346,8 +350,14 @@ class VirtualTrackpads:
                     old_velocity[1] * 0.45 + instant_y * 0.55,
                 )
             point["motionAt"] = now
-            if old is not None and abs(local_x - old[0]) + abs(local_y - old[1]) >= 0.035:
-                self.haptic()
+            velocity_x, velocity_y = point.get("velocity", (0.0, 0.0))
+            speed = (velocity_x * velocity_x + velocity_y * velocity_y) ** 0.5
+            speed_amount = clamp(speed / 3.5)
+            point["hapticTravel"] = point.get("hapticTravel", 0.0) + motion_distance
+            pulse_distance = 0.055 - speed_amount * 0.035
+            if point["hapticTravel"] >= pulse_distance:
+                point["hapticTravel"] %= pulse_distance
+                self.haptic(0.18 + speed_amount * 0.82)
         self.ip.touch(side, slot % 256, True, local_x, local_y)
         point["sent"] = (local_x, local_y)
         self.last_touches[side] = (local_x, local_y)
@@ -365,7 +375,7 @@ class VirtualTrackpads:
                 origin = point.get("origin", (x, y))
                 elapsed = time.monotonic() - point.get("started", 0.0)
                 travel = abs(x - origin[0]) + abs(y - origin[1])
-                if self.config["tapToClick"] and not was_suspended and not point.get("cancelTap") and elapsed <= 0.30 and travel <= 0.08:
+                if not was_suspended and not point.get("cancelTap") and elapsed <= 0.30 and travel <= 0.08:
                     try:
                         self.ip.press(side, True)
                         self.press_releases[side] = time.monotonic() + 0.06
