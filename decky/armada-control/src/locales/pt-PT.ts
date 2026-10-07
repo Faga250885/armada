@@ -85,6 +85,7 @@ export const ptPT = {
   "calibration.rightStick": "Analógico direito",
   "common.close": "Fechar",
   "calibration.save": "Guardar calibração",
+  "calibration.applying": "A aplicar...",
   "calibration.start": "Iniciar calibração",
   "calibration.resetDefaults": "Repor predefinições",
   "compatibility.invalidCoreEntry": "Entrada inválida: {value}",

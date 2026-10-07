@@ -74,10 +74,13 @@ STICK_MIN_TRAVEL = 256
 # 2: trigger deadzones are relative to the driver's fixed release reference.
 CALIBRATION_VERSION = 2
 TRIGGER_MIN_TRAVEL = 256
+# The saved extreme is a single peak sample that a normal full push falls just short of.
+OUTER_MARGIN_PERCENT = 3
 _inputplumber_events_cache = {"time": 0, "events": []}
 _calibration_session_token = None
 _session_device = None
 _session_fd = None
+_ranges_stale = False
 
 
 def input_events():
@@ -415,6 +418,7 @@ def stick_defaults(event, backend):
 
 
 def reset_calibration_params():
+    global _ranges_stale
     event = calibration_event()
     backend = calibration_backend(event)
     if backend is None:
@@ -438,6 +442,7 @@ def reset_calibration_params():
     params["backend"] = backend
     params["version"] = CALIBRATION_VERSION
     call("write_config", name="calibration", text=json.dumps(params, indent=2, sort_keys=True) + "\n")
+    _ranges_stale = True
     return calibration_status()
 
 
@@ -468,6 +473,7 @@ def calibration_from_capture(capture, current=None, stick_deadzone=0):
                     if f"{axis}_{name}" in current:
                         result[f"{axis}_{name}"] = int(current[f"{axis}_{name}"])
                 continue
+            inner = inner * (100 - OUTER_MARGIN_PERCENT) // 100
             result[f"{axis}_min"] = -inner
             result[f"{axis}_center"] = int(current.get(f"{axis}_center", 0)) - center
             result[f"{axis}_max"] = inner
@@ -501,7 +507,7 @@ def calibration_from_capture(capture, current=None, stick_deadzone=0):
         margin = max(int((full - rest) * 0.03), 4)
         # A rest reading of 0 may be hidden by the active deadzone, so never shrink it.
         deadzone = rest + margin if minimum > 0 else max(current_deadzone, margin)
-        params[f"{name}_max"] = full
+        params[f"{name}_max"] = full * (100 - OUTER_MARGIN_PERCENT) // 100
         params[f"{name}_deadzone"] = deadzone
         params[f"{name}_antideadzone"] = deadzone
     return params
@@ -530,6 +536,7 @@ def calibration_status():
 
 
 def save_calibration(capture):
+    global _ranges_stale
     state = controller_state()
     backend = state.get("backend") if state.get("canApply") else None
     if backend not in CALIBRATION_BACKENDS:
@@ -544,6 +551,7 @@ def save_calibration(capture):
     params["backend"] = backend
     params["version"] = CALIBRATION_VERSION
     call("write_config", name="calibration", text=json.dumps(params, indent=2, sort_keys=True) + "\n")
+    _ranges_stale = True
     return calibration_status()
 
 
@@ -555,9 +563,14 @@ def begin_session(token=None):
 
 
 def end_session(token=None):
-    global _calibration_session_token
+    global _calibration_session_token, _ranges_stale
     if _calibration_session_token != str(token or "default"):
         return False
     _calibration_session_token = None
     close_session_device()
-    return end_calibration_intercept()
+    ended = end_calibration_intercept()
+    if _ranges_stale:
+        # Restarting InputPlumber any earlier would drop the calibration intercept.
+        call("reload_input_ranges")
+        _ranges_stale = False
+    return ended

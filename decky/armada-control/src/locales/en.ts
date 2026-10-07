@@ -83,6 +83,7 @@ export const en = {
   "calibration.rightStick": "Right Stick",
   "common.close": "Close",
   "calibration.save": "Save Calibration",
+  "calibration.applying": "Applying...",
   "calibration.start": "Start Calibration",
   "calibration.resetDefaults": "Reset to Defaults",
   "compatibility.invalidCoreEntry": "Invalid entry: {value}",
