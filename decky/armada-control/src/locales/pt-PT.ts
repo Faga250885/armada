@@ -224,6 +224,8 @@ export const ptPT = {
   "common.brightness": "Brilho",
   "common.color": "Cor",
   "trackpads.title": "Trackpads virtuais",
+  "trackpads.master": "Trackpads virtuais",
+  "trackpads.masterDescription": "Liga ou desliga o sistema de trackpads. Quando desligado, o ecrã tátil funciona normalmente.",
   "trackpads.mode": "Modo dos trackpads",
   "trackpads.modeSimple": "Cantos inferiores",
   "trackpads.modeCorners": "Quatro cantos",

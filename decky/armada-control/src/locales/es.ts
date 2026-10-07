@@ -6,6 +6,8 @@ import { en, type TranslationKey } from "./en";
 export const es: Record<TranslationKey, string> = {
   ...en,
   "trackpads.title": "Trackpads virtuales",
+  "trackpads.master": "Trackpads virtuales",
+  "trackpads.masterDescription": "Enciende o apaga el sistema de trackpads. Al apagarlo, la pantalla táctil funciona normalmente.",
   "trackpads.mode": "Modo de los trackpads",
   "trackpads.modeSimple": "Esquinas inferiores",
   "trackpads.modeCorners": "Cuatro esquinas",

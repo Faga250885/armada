@@ -94,7 +94,7 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
   const [previewing, setPreviewing] = useState(false);
   const hideTimers = useRef<Record<string, number>>({});
   const previewTimer = useRef<number | null>(null);
-  const enabled = config.leftEnabled || config.rightEnabled;
+  const enabled = config.enabled && (config.leftEnabled || config.rightEnabled);
 
   useEffect(() => {
     if (!enabled) {

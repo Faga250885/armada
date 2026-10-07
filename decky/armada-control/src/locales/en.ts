@@ -222,6 +222,8 @@ export const en = {
   "common.brightness": "Brightness",
   "common.color": "Color",
   "trackpads.title": "Virtual Trackpads",
+  "trackpads.master": "Virtual Trackpads",
+  "trackpads.masterDescription": "Turns the virtual trackpad system on or off. When off, the touchscreen works normally.",
   "trackpads.mode": "Trackpad Mode",
   "trackpads.modeSimple": "Bottom Corners",
   "trackpads.modeCorners": "Four Corners",

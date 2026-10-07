@@ -56,12 +56,23 @@ export function Trackpads({ config, setConfig }: {
     | "trackpads.modeFloatingDescription"
     | "trackpads.modeHalvesDescription");
   const deckControllerSelected = config.controllerType === "deck-uhid";
+  const settingsDisabled = !pads.enabled;
   return (
     <>
       <div className="armada-subheader">{t("trackpads.title")}</div>
+        <ToggleRow
+          label={t("trackpads.master")}
+          description={t("trackpads.masterDescription")}
+          value={pads.enabled}
+          disabled={!deckControllerSelected}
+          onChange={(enabled) => update(enabled && !pads.leftEnabled && !pads.rightEnabled
+            ? { enabled, leftEnabled: true, rightEnabled: true }
+            : { enabled }, true)}
+        />
         <SelectEdit
           label={t("trackpads.mode")}
           value={pads.mode}
+          disabled={settingsDisabled}
           options={[
             { data: "simple", label: t("trackpads.modeSimple") },
             { data: "corners", label: t("trackpads.modeCorners") },
@@ -77,7 +88,7 @@ export function Trackpads({ config, setConfig }: {
           label={t("trackpads.left")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
           value={pads.leftEnabled}
-          disabled={!deckControllerSelected || splitScreen}
+          disabled={!deckControllerSelected || settingsDisabled || splitScreen}
           onChange={(leftEnabled) => update({ leftEnabled }, true)}
         />
         <SliderEdit
@@ -86,14 +97,14 @@ export function Trackpads({ config, setConfig }: {
             min={15}
             max={60}
             step={1}
-            disabled={!pads.leftEnabled || splitScreen}
+            disabled={settingsDisabled || !pads.leftEnabled || splitScreen}
             onChange={(leftSize) => update({ leftSize })}
           />
         <ToggleRow
           label={t("trackpads.right")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
           value={pads.rightEnabled}
-          disabled={!deckControllerSelected || splitScreen}
+          disabled={!deckControllerSelected || settingsDisabled || splitScreen}
           onChange={(rightEnabled) => update({ rightEnabled }, true)}
         />
         <SliderEdit
@@ -102,7 +113,7 @@ export function Trackpads({ config, setConfig }: {
             min={15}
             max={60}
             step={1}
-            disabled={!pads.rightEnabled || splitScreen}
+            disabled={settingsDisabled || !pads.rightEnabled || splitScreen}
             onChange={(rightSize) => update({ rightSize })}
           />
       <div className="armada-subheader">{t("trackpads.feedback")}</div>
@@ -110,14 +121,14 @@ export function Trackpads({ config, setConfig }: {
           label={t("trackpads.tapToClick")}
           description={t("trackpads.tapToClickDescription")}
           value={pads.tapToClick}
-          disabled={splitScreen}
+          disabled={settingsDisabled || splitScreen}
           onChange={(tapToClick) => update({ tapToClick }, true)}
         />
         <ToggleRow
           label={t("trackpads.limitToBounds")}
           description={t("trackpads.limitToBoundsDescription")}
           value={pads.limitToBounds}
-          disabled={splitScreen}
+          disabled={settingsDisabled || splitScreen}
           onChange={(limitToBounds) => update({ limitToBounds }, true)}
         />
         <SliderEdit
@@ -126,7 +137,7 @@ export function Trackpads({ config, setConfig }: {
           min={0}
           max={100}
           step={5}
-          disabled={splitScreen}
+          disabled={settingsDisabled || splitScreen}
           onChange={(hapticStrength) => update({ hapticStrength })}
         />
         <>
@@ -136,7 +147,7 @@ export function Trackpads({ config, setConfig }: {
             min={5}
             max={100}
             step={5}
-            disabled={splitScreen}
+            disabled={settingsDisabled || splitScreen}
             onChange={(borderOpacity) => update({ borderOpacity })}
           />
           <SliderEdit
@@ -145,7 +156,7 @@ export function Trackpads({ config, setConfig }: {
             min={0}
             max={100}
             step={5}
-            disabled={splitScreen}
+            disabled={settingsDisabled || splitScreen}
             onChange={(backgroundOpacity) => update({ backgroundOpacity })}
           />
         </>

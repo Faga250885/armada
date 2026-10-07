@@ -530,7 +530,7 @@ def action_set_virtual_trackpads(request):
     required = set(VIRTUAL_TRACKPADS_DEFAULTS)
     if set(requested) != required:
         raise ValueError("incomplete virtual trackpad configuration")
-    for key in ("leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
+    for key in ("enabled", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
         if not isinstance(requested[key], bool):
             raise ValueError(f"invalid {key}")
     if requested["mode"] not in ("simple", "corners", "floating", "halves"):
@@ -541,7 +541,7 @@ def action_set_virtual_trackpads(request):
             raise ValueError(f"invalid {key}")
 
     # Steam only exposes the two pad inputs on the Steam Deck target.
-    if requested["leftEnabled"] or requested["rightEnabled"]:
+    if requested["enabled"] and (requested["leftEnabled"] or requested["rightEnabled"]):
         current = action_get_controller_type({})["value"]
         if current != "deck-uhid":
             raise RuntimeError("select Steam Deck controller emulation before enabling virtual trackpads")

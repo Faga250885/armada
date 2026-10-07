@@ -224,6 +224,8 @@ export const ptBR = {
   "common.brightness": "Brilho",
   "common.color": "Cor",
   "trackpads.title": "Trackpads virtuais",
+  "trackpads.master": "Trackpads virtuais",
+  "trackpads.masterDescription": "Liga ou desliga o sistema de trackpads. Quando desligado, a tela sensível ao toque funciona normalmente.",
   "trackpads.mode": "Modo dos trackpads",
   "trackpads.modeSimple": "Cantos inferiores",
   "trackpads.modeCorners": "Quatro cantos",

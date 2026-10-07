@@ -1,4 +1,5 @@
 DEFAULT_CONFIG = {
+    "enabled": False,
     "leftEnabled": False,
     "rightEnabled": False,
     "mode": "simple",
@@ -28,7 +29,7 @@ def sanitize_config(value):
     result = dict(DEFAULT_CONFIG)
     if not isinstance(value, dict):
         return result
-    for key in ("leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
+    for key in ("enabled", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
         if isinstance(value.get(key), bool):
             result[key] = value[key]
     for key, (minimum, maximum) in NUMBER_RANGES.items():
@@ -40,6 +41,9 @@ def sanitize_config(value):
     elif value.get("fourPads") is True:
         # Preserve the layout selected by images created before modes existed.
         result["mode"] = "corners"
+    if "enabled" not in value and (result["leftEnabled"] or result["rightEnabled"]):
+        # Older images used the side toggles as the implicit master switch.
+        result["enabled"] = True
     return result
 
 
@@ -70,6 +74,8 @@ def trackpad_at(x, y, config, aspect_ratio=16 / 9):
 
 def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
     """Return (side, corner, local_x, local_y) for an enabled pad zone."""
+    if not config["enabled"]:
+        return None
     for side in ("left", "right"):
         if not config[f"{side}Enabled"]:
             continue

@@ -3,6 +3,7 @@ from .privileged import call
 
 DEFAULT = {
     "supported": False,
+    "enabled": False,
     "leftEnabled": False,
     "rightEnabled": False,
     "mode": "simple",

@@ -6,6 +6,7 @@ PYTHONPATH="$ROOT/system_files/usr/lib/armada" python3 - <<'PYEOF'
 from armada_virtual_trackpads import DEFAULT_CONFIG, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_at, trackpad_coordinates
 
 config = sanitize_config({
+    "enabled": True,
     "leftEnabled": True,
     "rightEnabled": True,
     "mode": "corners",
@@ -21,6 +22,8 @@ assert config["hapticStrength"] == 100
 assert config["borderOpacity"] == 5
 assert config["backgroundOpacity"] == 45
 assert sanitize_config({"leftEnabled": 1})["leftEnabled"] is False
+assert sanitize_config({"enabled": False, "leftEnabled": True})["enabled"] is False
+assert sanitize_config({"leftEnabled": True})["enabled"] is True
 assert set(config) == set(DEFAULT_CONFIG)
 
 assert rotate_touch(0.25, 0.75, "left") == (0.75, 0.75)
@@ -50,6 +53,7 @@ assert bottom_right and bottom_right[:2] == ("right", "bottom")
 simple = {**config, "mode": "simple"}
 assert trackpad_zone_at(0.05, 0.1, simple) is None
 assert trackpad_zone_at(0.05, 0.9, simple)[:2] == ("left", "bottom")
+assert trackpad_zone_at(0.05, 0.9, {**simple, "enabled": False}) is None
 
 floating = {**config, "mode": "floating"}
 assert trackpad_zone_at(0.45, 0.42, floating) == ("left", "floating", 0.5, 0.5)

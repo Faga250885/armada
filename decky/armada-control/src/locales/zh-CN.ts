@@ -224,6 +224,8 @@ export const zhCN = {
   "common.brightness": "亮度",
   "common.color": "颜色",
   "trackpads.title": "虚拟触控板",
+  "trackpads.master": "虚拟触控板",
+  "trackpads.masterDescription": "开启或关闭虚拟触控板系统。关闭后，触摸屏恢复正常工作。",
   "trackpads.mode": "触控板模式",
   "trackpads.modeSimple": "底部两角",
   "trackpads.modeCorners": "四个角",
