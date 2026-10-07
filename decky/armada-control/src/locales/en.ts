@@ -221,6 +221,22 @@ export const en = {
   "common.enabled": "Enabled",
   "common.brightness": "Brightness",
   "common.color": "Color",
+  "trackpads.title": "Virtual Trackpads",
+  "trackpads.left": "Left Trackpad",
+  "trackpads.right": "Right Trackpad",
+  "trackpads.leftSize": "Left Size (%)",
+  "trackpads.rightSize": "Right Size (%)",
+  "trackpads.feedback": "Feedback",
+  "trackpads.tapToClick": "Tap to Click",
+  "trackpads.tapToClickDescription": "A short tap sends the Steam Deck trackpad Press event.",
+  "trackpads.hapticStrength": "Vibration Strength (%)",
+  "trackpads.borderOpacity": "Border Opacity (%)",
+  "trackpads.backgroundOpacity": "Dotted Background Opacity (%)",
+  "trackpads.touchscreenNotice": "While enabled, normal touchscreen input is blocked outside the trackpad areas.",
+  "trackpads.deckTargetNotice": "Steam Deck controller emulation must remain selected while virtual trackpads are enabled.",
+  "trackpads.selectDeckFirst": "Select Steam Deck emulation above first.",
+  "trackpads.unsupported": "Virtual trackpads are not supported on this device.",
+  "trackpads.saveError": "Could not update virtual trackpads",
 } as const;
 
 export type TranslationKey = keyof typeof en;

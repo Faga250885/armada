@@ -17,6 +17,9 @@ from pathlib import Path
 sys.path.insert(0, "/usr/lib/armada")
 import armada_game_tweaks
 import armada_perf
+from armada_virtual_trackpads import DEFAULT_CONFIG as VIRTUAL_TRACKPADS_DEFAULTS
+from armada_virtual_trackpads import NUMBER_RANGES as VIRTUAL_TRACKPAD_NUMBER_RANGES
+from armada_virtual_trackpads import sanitize_config as sanitize_virtual_trackpads_config
 
 SOCKET = Path("/run/armada/control.sock")
 SESSION_SOCKET = Path(armada_perf.SESSION_SOCKET)
@@ -33,6 +36,9 @@ CLIENT_TIMEOUT = 5
 CONTROLLER_TYPES = {"deck-uhid", "xbox-series", "xb360", "ds5"}
 INTERCEPT_MODES = {"overlay", "reset"}
 SWIPE_GESTURES_CONFIG = Path("/etc/armada/swipe-gestures.conf")
+VIRTUAL_TRACKPADS_CONFIG = Path("/etc/armada/virtual-trackpads.json")
+VIRTUAL_TRACKPADS_STATE = Path("/run/armada/virtual-trackpads-state.json")
+VIRTUAL_TRACKPADS_SERVICE = "armada-virtual-trackpads.service"
 SLEEP_CONFIG = Path("/etc/armada/sleep.conf")
 SUSPEND_MODE_KEY = "suspend_mode"
 NM_IGNORE_SLEEP = Path("/etc/NetworkManager/ignore-sleep")
@@ -383,6 +389,10 @@ def action_set_controller_type(request):
     value = str(request.get("value", ""))
     if value not in CONTROLLER_TYPES:
         raise ValueError("invalid controller type")
+    if value != "deck-uhid":
+        pads = virtual_trackpads_config()
+        if pads["leftEnabled"] or pads["rightEnabled"]:
+            raise RuntimeError("Steam Deck controller emulation is required by virtual trackpads")
     run(["/usr/libexec/armada/controller-type", "set", value])
     result = subprocess.check_output(["/usr/libexec/armada/controller-type", "get"], text=True, timeout=5).strip()
     return {"value": result}
@@ -497,6 +507,59 @@ def action_set_swipe_gestures_enabled(request):
             gamescope_swipe_gestures(previous)
         raise
     return {"enabled": enabled}
+
+
+def virtual_trackpads_config():
+    try:
+        value = json.loads(VIRTUAL_TRACKPADS_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        value = {}
+    return sanitize_virtual_trackpads_config(value)
+
+
+def action_get_virtual_trackpads(request):
+    result = virtual_trackpads_config()
+    result["supported"] = True
+    return result
+
+
+def action_set_virtual_trackpads(request):
+    requested = request.get("config")
+    if not isinstance(requested, dict):
+        raise ValueError("invalid virtual trackpad configuration")
+    required = set(VIRTUAL_TRACKPADS_DEFAULTS)
+    if set(requested) != required:
+        raise ValueError("incomplete virtual trackpad configuration")
+    for key in ("leftEnabled", "rightEnabled", "tapToClick"):
+        if not isinstance(requested[key], bool):
+            raise ValueError(f"invalid {key}")
+    for key, (minimum, maximum) in VIRTUAL_TRACKPAD_NUMBER_RANGES.items():
+        value = requested[key]
+        if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
+            raise ValueError(f"invalid {key}")
+
+    # Steam only exposes the two pad inputs on the Steam Deck target.
+    if requested["leftEnabled"] or requested["rightEnabled"]:
+        current = action_get_controller_type({})["value"]
+        if current != "deck-uhid":
+            raise RuntimeError("select Steam Deck controller emulation before enabling virtual trackpads")
+    atomic_write(VIRTUAL_TRACKPADS_CONFIG, json.dumps(requested, separators=(",", ":")) + "\n")
+    run(["/usr/bin/systemctl", "reload-or-restart", VIRTUAL_TRACKPADS_SERVICE], timeout=10)
+    result = dict(requested)
+    result["supported"] = True
+    result["controllerType"] = action_get_controller_type({})["value"]
+    return result
+
+
+def action_get_virtual_trackpads_state(request):
+    try:
+        state = json.loads(VIRTUAL_TRACKPADS_STATE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        state = {}
+    return {
+        "leftActive": bool(state.get("leftActive")),
+        "rightActive": bool(state.get("rightActive")),
+    }
 
 
 def action_set_abl_auto_enabled(request):
@@ -857,6 +920,9 @@ def action_restart_game_mode(request):
 ACTIONS = {
     "get_swipe_gestures_enabled": action_get_swipe_gestures_enabled,
     "set_swipe_gestures_enabled": action_set_swipe_gestures_enabled,
+    "get_virtual_trackpads": action_get_virtual_trackpads,
+    "set_virtual_trackpads": action_set_virtual_trackpads,
+    "get_virtual_trackpads_state": action_get_virtual_trackpads_state,
     "set_controller_type": action_set_controller_type,
     "get_controller_type": action_get_controller_type,
     "get_device_env": action_get_device_env,

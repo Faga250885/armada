@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { getConfig, getInstalledGames, savePowerConfig, saveTweaks } from "./backend";
 import { RgbLighting } from "./components/RgbLighting";
+import { VirtualTrackpadOverlay } from "./components/VirtualTrackpadOverlay";
 import { useDebouncedSave } from "./hooks/useDebouncedSave";
 import { useLocale } from "./hooks/useLocale";
 import { t } from "./i18n";
@@ -85,21 +86,24 @@ export function Content() {
     <div className="armada-control-tab-content">{content}</div>
   );
   return (
-    <div className="armada-control-tabs">
-      <style>{styles}</style>
-      <Tabs
-        activeTab={tab}
-        onShowTab={setTab}
-        tabs={[
-          { id: "Compatibility", title: tabIcons.Compatibility, content: tabContent(<Compatibility config={config} setConfig={setConfig} />) },
-          { id: "Power", title: tabIcons.Power, content: tabContent(<Power config={config} setConfig={setConfig} />) },
-          { id: "Fans", title: tabIcons.Fans, content: tabContent(<Fans setConfig={setConfig} />) },
-          ...(config.rgbSupported ? [
-            { id: "RGB", title: tabIcons.RGB, content: tabContent(<RgbLighting />) },
-          ] : []),
-          { id: "Advanced", title: tabIcons.Advanced, content: tabContent(<Settings config={config} setConfig={setConfig} />) },
-        ]}
-      />
-    </div>
+    <>
+      <VirtualTrackpadOverlay config={config.virtualTrackpads} />
+      <div className="armada-control-tabs">
+        <style>{styles}</style>
+        <Tabs
+          activeTab={tab}
+          onShowTab={setTab}
+          tabs={[
+            { id: "Compatibility", title: tabIcons.Compatibility, content: tabContent(<Compatibility config={config} setConfig={setConfig} />) },
+            { id: "Power", title: tabIcons.Power, content: tabContent(<Power config={config} setConfig={setConfig} />) },
+            { id: "Fans", title: tabIcons.Fans, content: tabContent(<Fans setConfig={setConfig} />) },
+            ...(config.rgbSupported ? [
+              { id: "RGB", title: tabIcons.RGB, content: tabContent(<RgbLighting />) },
+            ] : []),
+            { id: "Advanced", title: tabIcons.Advanced, content: tabContent(<Settings config={config} setConfig={setConfig} />) },
+          ]}
+        />
+      </div>
+    </>
   );
 }

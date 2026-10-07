@@ -106,6 +106,23 @@ export interface RgbConfig {
   saturation: number;
 }
 
+export interface VirtualTrackpadsConfig {
+  supported: boolean;
+  leftEnabled: boolean;
+  rightEnabled: boolean;
+  tapToClick: boolean;
+  leftSize: number;
+  rightSize: number;
+  hapticStrength: number;
+  borderOpacity: number;
+  backgroundOpacity: number;
+}
+
+export interface VirtualTrackpadsState {
+  leftActive: boolean;
+  rightActive: boolean;
+}
+
 export interface GameRef {
   appid: string;
   name: string;
@@ -149,6 +166,7 @@ export interface Config {
   sleepModes: DropdownChoice[];
   controllerType: string;
   controllerTypes: DropdownChoice[];
+  virtualTrackpads: VirtualTrackpadsConfig;
   calibration?: CalibrationState;
   game?: GameRef | null;
   selectedGame?: GameRef | null;

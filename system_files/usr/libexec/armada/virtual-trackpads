@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+"""Turn regions of a rotated touchscreen into Steam Deck touchpads."""
+
+import fcntl
+import json
+import os
+import select
+import signal
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from gi.repository import Gio, GLib
+
+sys.path.insert(0, "/usr/lib/armada")
+from armada_virtual_trackpads import DEFAULT_CONFIG, clamp, rotate_touch, sanitize_config, trackpad_at
+
+
+CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
+STATE_PATH = Path("/run/armada/virtual-trackpads-state.json")
+DEVICE_ENV = os.environ.get("ARMADA_DEVICE_ENV", "/usr/libexec/armada/device-env")
+INPUTPLUMBER_SERVICE = "org.shadowblip.InputPlumber"
+INPUTPLUMBER_ROOT = "/org/shadowblip/InputPlumber"
+COMPOSITE_IFACE = "org.shadowblip.Input.CompositeDevice"
+FF_IFACE = "org.shadowblip.Output.ForceFeedback"
+
+EV_SYN = 0
+EV_ABS = 3
+SYN_REPORT = 0
+ABS_MT_SLOT = 0x2F
+ABS_MT_POSITION_X = 0x35
+ABS_MT_POSITION_Y = 0x36
+ABS_MT_TRACKING_ID = 0x39
+EVIOCGRAB = 0x40044590
+INPUT_EVENT = struct.Struct("@llHHi")
+
+def load_config(path=CONFIG_PATH):
+    try:
+        return sanitize_config(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        return dict(DEFAULT_CONFIG)
+
+
+def parse_device_env():
+    try:
+        output = subprocess.check_output([DEVICE_ENV], text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    result = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            result[key] = value.strip().strip("'\"")
+    return result
+
+
+def eviocgabs(code):
+    return 0x80184540 + code
+
+
+def abs_range(fd, code):
+    _value, minimum, maximum, _fuzz, _flat, _resolution = struct.unpack(
+        "iiiiii", fcntl.ioctl(fd, eviocgabs(code), b"\0" * 24)
+    )
+    if maximum <= minimum:
+        raise RuntimeError("invalid touchscreen axis range")
+    return minimum, maximum
+
+
+def is_touchscreen(path):
+    try:
+        output = subprocess.check_output(
+            ["/usr/bin/udevadm", "info", "--query=property", f"--name={path}"],
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "ID_INPUT_TOUCHSCREEN=1" in output.splitlines()
+
+
+def find_touchscreen():
+    for path in sorted(Path("/dev/input").glob("event*")):
+        if is_touchscreen(path):
+            return path
+    raise RuntimeError("touchscreen input device not found")
+
+
+class InputPlumber:
+    def __init__(self):
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        self.path = None
+
+    def find_composite(self):
+        response = self.bus.call_sync(
+            INPUTPLUMBER_SERVICE,
+            INPUTPLUMBER_ROOT,
+            "org.freedesktop.DBus.ObjectManager",
+            "GetManagedObjects",
+            None,
+            GLib.VariantType.new("(a{oa{sa{sv}}})"),
+            Gio.DBusCallFlags.NONE,
+            3000,
+            None,
+        )
+        objects = response.unpack()[0]
+        for path, interfaces in objects.items():
+            if COMPOSITE_IFACE in interfaces:
+                self.path = path
+                return path
+        raise RuntimeError("InputPlumber composite device not found")
+
+    def call(self, interface, method, parameters):
+        if self.path is None:
+            self.find_composite()
+        try:
+            self.bus.call_sync(
+                INPUTPLUMBER_SERVICE,
+                self.path,
+                interface,
+                method,
+                parameters,
+                None,
+                Gio.DBusCallFlags.NONE,
+                1000,
+                None,
+            )
+        except GLib.Error:
+            self.path = None
+            raise
+
+    def touch(self, side, index, touching, x, y):
+        self.call(
+            COMPOSITE_IFACE,
+            "SendTouchEvent",
+            GLib.Variant(
+                "(subddd)",
+                (f"Touchpad:{side.title()}Pad:Touch:Motion", index, touching, 1.0 if touching else 0.0, x, y),
+            ),
+        )
+
+    def press(self, side, pressed):
+        self.call(
+            COMPOSITE_IFACE,
+            "SendEvent",
+            GLib.Variant(
+                "(sv)",
+                (f"Touchpad:{side.title()}Pad:Touch:Button:Press", GLib.Variant("b", pressed)),
+            ),
+        )
+
+    def rumble(self, strength):
+        self.call(FF_IFACE, "Rumble", GLib.Variant("(d)", (clamp(strength),)))
+
+    def stop_rumble(self):
+        self.call(FF_IFACE, "Stop", None)
+
+
+class VirtualTrackpads:
+    def __init__(self):
+        self.config = load_config()
+        self.orientation = parse_device_env().get("ARMADA_PANEL_ORIENTATION", "normal")
+        self.ip = InputPlumber()
+        self.fd = None
+        self.x_range = (0, 1)
+        self.y_range = (0, 1)
+        self.current_slot = 0
+        self.slots = {}
+        self.pad_slots = {}
+        self.dirty_slots = set()
+        self.running = True
+        self.reload_requested = False
+        self.rumble_stop_at = 0.0
+        self.last_haptic = 0.0
+        self.press_releases = {}
+        self.write_state()
+
+    def write_state(self):
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "leftActive": "left" in self.pad_slots.values(),
+            "rightActive": "right" in self.pad_slots.values(),
+            "updated": time.time(),
+        }
+        temporary = STATE_PATH.with_suffix(".tmp")
+        temporary.write_text(json.dumps(state, separators=(",", ":")), encoding="utf-8")
+        os.replace(temporary, STATE_PATH)
+
+    def close_device(self):
+        if self.fd is not None:
+            try:
+                fcntl.ioctl(self.fd, EVIOCGRAB, 0)
+            except OSError:
+                pass
+            os.close(self.fd)
+            self.fd = None
+        for slot, side in list(self.pad_slots.items()):
+            try:
+                self.ip.touch(side, slot % 256, False, 0.0, 0.0)
+            except Exception:
+                pass
+        self.pad_slots.clear()
+        self.slots.clear()
+        self.dirty_slots.clear()
+        for side in ("left", "right"):
+            try:
+                self.ip.press(side, False)
+            except Exception:
+                pass
+        self.press_releases.clear()
+        self.write_state()
+
+    def open_device(self):
+        path = find_touchscreen()
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            self.x_range = abs_range(fd, ABS_MT_POSITION_X)
+            self.y_range = abs_range(fd, ABS_MT_POSITION_Y)
+            fcntl.ioctl(fd, EVIOCGRAB, 1)
+        except Exception:
+            os.close(fd)
+            raise
+        self.fd = fd
+
+    def reload(self):
+        previous_active = self.config["leftEnabled"] or self.config["rightEnabled"]
+        self.config = load_config()
+        active = self.config["leftEnabled"] or self.config["rightEnabled"]
+        if previous_active or not active:
+            self.close_device()
+        if active:
+            self.open_device()
+
+    def normalize(self, value, bounds):
+        minimum, maximum = bounds
+        return clamp((value - minimum) / (maximum - minimum))
+
+    def haptic(self):
+        strength = self.config["hapticStrength"] / 100.0
+        now = time.monotonic()
+        if strength <= 0 or now - self.last_haptic < 0.045:
+            return
+        try:
+            self.ip.rumble(strength)
+            self.rumble_stop_at = now + 0.025
+            self.last_haptic = now
+        except Exception:
+            pass
+
+    def update_slot(self, slot):
+        point = self.slots.get(slot)
+        if not point or point.get("tracking", -1) < 0 or "x" not in point or "y" not in point:
+            return
+        x, y = rotate_touch(
+            self.normalize(point["x"], self.x_range),
+            self.normalize(point["y"], self.y_range),
+            self.orientation,
+        )
+        side = self.pad_slots.get(slot)
+        if side is None:
+            match = trackpad_at(x, y, self.config)
+            if match is None:
+                return
+            side, local_x, local_y = match
+            if side in self.pad_slots.values():
+                return
+            self.pad_slots[slot] = side
+            point["started"] = time.monotonic()
+            point["origin"] = (local_x, local_y)
+            self.write_state()
+            self.haptic()
+        else:
+            height = self.config[f"{side}Size"] / 100.0
+            width = height / (16 / 9)
+            left = 0.0 if side == "left" else 1.0 - width
+            local_x = clamp((x - left) / width)
+            local_y = clamp((y - (1.0 - height)) / height)
+            old = point.get("sent")
+            if old is not None and abs(local_x - old[0]) + abs(local_y - old[1]) >= 0.035:
+                self.haptic()
+        self.ip.touch(side, slot % 256, True, local_x, local_y)
+        point["sent"] = (local_x, local_y)
+
+    def release_slot(self, slot):
+        side = self.pad_slots.pop(slot, None)
+        point = self.slots.pop(slot, {})
+        if side:
+            x, y = point.get("sent", (0.0, 0.0))
+            try:
+                origin = point.get("origin", (x, y))
+                elapsed = time.monotonic() - point.get("started", 0.0)
+                travel = abs(x - origin[0]) + abs(y - origin[1])
+                if self.config["tapToClick"] and elapsed <= 0.30 and travel <= 0.08:
+                    try:
+                        self.ip.press(side, True)
+                        self.press_releases[side] = time.monotonic() + 0.06
+                    except Exception:
+                        pass
+                self.ip.touch(side, slot % 256, False, x, y)
+            finally:
+                self.write_state()
+
+    def release_presses(self):
+        now = time.monotonic()
+        for side, deadline in list(self.press_releases.items()):
+            if now < deadline:
+                continue
+            try:
+                self.ip.press(side, False)
+            finally:
+                self.press_releases.pop(side, None)
+
+    def process(self, data):
+        for offset in range(0, len(data) - INPUT_EVENT.size + 1, INPUT_EVENT.size):
+            _sec, _usec, event_type, code, value = INPUT_EVENT.unpack_from(data, offset)
+            if event_type == EV_ABS:
+                if code == ABS_MT_SLOT:
+                    self.current_slot = value
+                elif code == ABS_MT_TRACKING_ID:
+                    if value < 0:
+                        self.release_slot(self.current_slot)
+                    else:
+                        self.slots[self.current_slot] = {"tracking": value}
+                elif code == ABS_MT_POSITION_X:
+                    self.slots.setdefault(self.current_slot, {})["x"] = value
+                    self.dirty_slots.add(self.current_slot)
+                elif code == ABS_MT_POSITION_Y:
+                    self.slots.setdefault(self.current_slot, {})["y"] = value
+                    self.dirty_slots.add(self.current_slot)
+            elif event_type == EV_SYN and code == SYN_REPORT:
+                for slot in self.dirty_slots:
+                    self.update_slot(slot)
+                self.dirty_slots.clear()
+
+    def run(self):
+        self.reload()
+        while self.running:
+            if self.reload_requested:
+                self.reload_requested = False
+                try:
+                    self.reload()
+                except Exception as error:
+                    print(f"virtual-trackpads: reload failed: {error}", flush=True)
+            timeout = 0.2
+            if self.rumble_stop_at:
+                timeout = max(0.0, min(timeout, self.rumble_stop_at - time.monotonic()))
+            if self.press_releases:
+                timeout = max(0.0, min(timeout, min(self.press_releases.values()) - time.monotonic()))
+            readable, _, _ = select.select([self.fd] if self.fd is not None else [], [], [], timeout)
+            try:
+                self.release_presses()
+            except Exception:
+                pass
+            if self.rumble_stop_at and time.monotonic() >= self.rumble_stop_at:
+                self.rumble_stop_at = 0.0
+                try:
+                    self.ip.stop_rumble()
+                except Exception:
+                    pass
+            if readable:
+                try:
+                    self.process(os.read(self.fd, INPUT_EVENT.size * 64))
+                except BlockingIOError:
+                    pass
+                except (OSError, GLib.Error) as error:
+                    print(f"virtual-trackpads: input failed: {error}", flush=True)
+                    self.close_device()
+                    time.sleep(1)
+                    try:
+                        self.open_device()
+                    except Exception:
+                        pass
+
+
+def main():
+    daemon = VirtualTrackpads()
+
+    def reload_config(_signum, _frame):
+        daemon.reload_requested = True
+
+    def stop(_signum, _frame):
+        daemon.running = False
+
+    signal.signal(signal.SIGHUP, reload_config)
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    try:
+        daemon.run()
+    finally:
+        daemon.close_device()
+        try:
+            daemon.ip.stop_rumble()
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    main()

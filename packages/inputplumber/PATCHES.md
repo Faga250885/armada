@@ -11,3 +11,6 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
 - `patches/0004-feat-Hardware-Support-Add-AYN-Thor-Lite.patch`
   source: armada
   notes: Matches the Thor Lite device-tree compatible and its Retroid-protocol MCU gamepad, reusing the existing Retroid Type 1 capability map. Maps the AYN button like the Thor Base.
+- `patches/0005-add-dbus-touch-events.patch`
+  source: armada
+  notes: Adds a polkit-protected D-Bus method for injecting normalized multitouch values into Steam Deck touchpad targets.
