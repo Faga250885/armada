@@ -180,6 +180,7 @@ class VirtualTrackpads:
         self.rumble_stop_at = 0.0
         self.last_haptic = 0.0
         self.press_releases = {}
+        self.inertia_haptics = {}
         self.write_state()
 
     def write_state(self, force=True):
@@ -230,6 +231,7 @@ class VirtualTrackpads:
             except Exception:
                 pass
         self.press_releases.clear()
+        self.inertia_haptics.clear()
         self.write_state()
 
     def open_device(self):
@@ -257,8 +259,8 @@ class VirtualTrackpads:
         minimum, maximum = bounds
         return clamp((value - minimum) / (maximum - minimum))
 
-    def haptic(self):
-        strength = self.config["hapticStrength"] / 100.0
+    def haptic(self, multiplier=1.0):
+        strength = self.config["hapticStrength"] / 100.0 * clamp(multiplier)
         now = time.monotonic()
         if strength <= 0 or now - self.last_haptic < 0.045:
             return
@@ -287,11 +289,14 @@ class VirtualTrackpads:
             if any(value[0] == side for value in self.pad_slots.values()):
                 return
             self.pad_slots[slot] = (side, zone, x, y)
+            self.inertia_haptics.pop(side, None)
             self.last_zones[side] = zone
             self.last_positions[side] = (x, y)
             self.last_touches[side] = (local_x, local_y)
             point["started"] = time.monotonic()
             point["origin"] = (local_x, local_y)
+            point["velocity"] = (0.0, 0.0)
+            point["motionAt"] = time.monotonic()
             self.write_state()
             self.haptic()
         else:
@@ -311,9 +316,13 @@ class VirtualTrackpads:
                 return
             if slot in self.suspended_slots:
                 self.suspended_slots.discard(slot)
-                point["origin"] = trackpad_coordinates(
+                resumed_coordinates = trackpad_coordinates(
                     x, y, side, zone, self.config, anchor_x, anchor_y
                 )
+                point["origin"] = resumed_coordinates
+                point["sent"] = resumed_coordinates
+                point["velocity"] = (0.0, 0.0)
+                point["motionAt"] = time.monotonic()
                 point["started"] = time.monotonic()
                 self.write_state()
                 self.haptic()
@@ -321,6 +330,18 @@ class VirtualTrackpads:
                 x, y, side, zone, self.config, anchor_x, anchor_y
             )
             old = point.get("sent")
+            now = time.monotonic()
+            previous_motion_at = point.get("motionAt")
+            if old is not None and previous_motion_at is not None:
+                elapsed = max(0.001, now - previous_motion_at)
+                instant_x = (local_x - old[0]) / elapsed
+                instant_y = (local_y - old[1]) / elapsed
+                old_velocity = point.get("velocity", (0.0, 0.0))
+                point["velocity"] = (
+                    old_velocity[0] * 0.45 + instant_x * 0.55,
+                    old_velocity[1] * 0.45 + instant_y * 0.55,
+                )
+            point["motionAt"] = now
             if old is not None and abs(local_x - old[0]) + abs(local_y - old[1]) >= 0.035:
                 self.haptic()
         self.ip.touch(side, slot % 256, True, local_x, local_y)
@@ -348,6 +369,15 @@ class VirtualTrackpads:
                         pass
                 if not was_suspended:
                     self.ip.touch(side, slot % 256, False, x, y)
+                velocity_x, velocity_y = point.get("velocity", (0.0, 0.0))
+                speed = (velocity_x * velocity_x + velocity_y * velocity_y) ** 0.5
+                motion_age = time.monotonic() - point.get("motionAt", 0.0)
+                if not was_suspended and motion_age <= 0.12 and speed >= 0.35:
+                    amount = clamp(speed / 4.0, 0.12, 1.0)
+                    self.inertia_haptics[side] = {
+                        "amount": amount,
+                        "next": time.monotonic() + 0.045,
+                    }
             finally:
                 self.write_state()
 
@@ -360,6 +390,20 @@ class VirtualTrackpads:
                 self.ip.press(side, False)
             finally:
                 self.press_releases.pop(side, None)
+
+    def pulse_inertia_haptics(self):
+        now = time.monotonic()
+        for side, inertia in list(self.inertia_haptics.items()):
+            if now < inertia["next"]:
+                continue
+            amount = inertia["amount"]
+            self.haptic(amount)
+            amount *= 0.84
+            if amount < 0.06:
+                self.inertia_haptics.pop(side, None)
+                continue
+            inertia["amount"] = amount
+            inertia["next"] = now + 0.045 + (1.0 - amount) * 0.055
 
     def process(self, data):
         for offset in range(0, len(data) - INPUT_EVENT.size + 1, INPUT_EVENT.size):
@@ -398,9 +442,15 @@ class VirtualTrackpads:
                 timeout = max(0.0, min(timeout, self.rumble_stop_at - time.monotonic()))
             if self.press_releases:
                 timeout = max(0.0, min(timeout, min(self.press_releases.values()) - time.monotonic()))
+            if self.inertia_haptics:
+                timeout = max(0.0, min(timeout, min(item["next"] for item in self.inertia_haptics.values()) - time.monotonic()))
             readable, _, _ = select.select([self.fd] if self.fd is not None else [], [], [], timeout)
             try:
                 self.release_presses()
+            except Exception:
+                pass
+            try:
+                self.pulse_inertia_haptics()
             except Exception:
                 pass
             if self.rumble_stop_at and time.monotonic() >= self.rumble_stop_at:
