@@ -135,7 +135,7 @@ expect_args \
 [[ "$(envval PATH)" == /test/home/.local/bin:/test/home/bin:/usr/local/bin:/usr/bin ]]
 [[ "$(envval XDG_CURRENT_DESKTOP)" == KDE && "$(envval XDG_SESSION_TYPE)" == wayland ]]
 [[ "$(envval PLASMA_PLATFORM)" == phone:handset && "$(envval DISABLE_GAMESCOPE_WSI)" == 1 ]]
-[[ "$(envval DISPLAY)" == :7 && "$(envval XDG_DATA_DIRS)" == /test/share && "$(envval XDG_SESSION_ID)" == 9 ]]
+[[ "$(envval DISPLAY)" == :7 && "$(envval XDG_DATA_DIRS)" == /usr/share/armada/plasma/bus:/test/share && "$(envval XDG_SESSION_ID)" == 9 ]]
 [[ "$(envval ARMADA_DEVICE_ID)" == test-device && "$(envval LANG)" == C.UTF-8 ]]
 [[ "$(envval LANGUAGE)" == de && "$(envval LC_TIME)" == de_DE.UTF-8 ]]
 for leaked in LD_PRELOAD LC_ALL QT_QPA_PLATFORM QT_IM_MODULE GTK_IM_MODULE SteamAppId STEAM_COMPAT_APP_ID \
