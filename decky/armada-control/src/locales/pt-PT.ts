@@ -242,7 +242,7 @@ export const ptPT = {
   "trackpads.tapToClick": "Toque para clicar",
   "trackpads.tapToClickDescription": "Um toque curto envia o evento Press do trackpad da Steam Deck.",
   "trackpads.limitToBounds": "Limitar à área visível",
-  "trackpads.limitToBoundsDescription": "Deixa de reconhecer o contacto ao sair do trackpad até levantar o dedo e tocar novamente.",
+  "trackpads.limitToBoundsDescription": "Pausa o contacto fora do trackpad e retoma-o quando o mesmo dedo volta a entrar.",
   "trackpads.hapticStrength": "Força da vibração (%)",
   "trackpads.borderOpacity": "Opacidade do contorno (%)",
   "trackpads.backgroundOpacity": "Opacidade do fundo pontilhado (%)",
