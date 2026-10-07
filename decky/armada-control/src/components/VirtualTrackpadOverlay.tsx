@@ -19,6 +19,75 @@ const EMPTY: VirtualTrackpadsState = {
 };
 const HOLD_MS = 1000;
 
+function ReactiveDots({ active, touchX, touchY, opacity }: {
+  active: boolean;
+  touchX: number;
+  touchY: number;
+  opacity: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const strengthRef = useRef(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const parent = canvas?.parentElement;
+    if (!canvas || !parent) return;
+    let frame = 0;
+    let previous = performance.now();
+    const draw = (now: number) => {
+      const elapsed = Math.min(40, now - previous);
+      previous = now;
+      const target = active ? 1 : 0;
+      strengthRef.current += (target - strengthRef.current) * (1 - Math.exp(-elapsed / 85));
+      const bounds = parent.getBoundingClientRect();
+      const ratio = Math.min(2, window.devicePixelRatio || 1);
+      const width = Math.max(1, Math.round(bounds.width));
+      const height = Math.max(1, Math.round(bounds.height));
+      if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+      }
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = `rgba(255,255,255,${opacity / 100})`;
+      const spacing = 12;
+      const radius = 2;
+      const influenceRadius = Math.min(width, height) * 0.28;
+      const centerX = touchX * width;
+      const centerY = touchY * height;
+      for (let baseX = spacing / 2; baseX < width; baseX += spacing) {
+        for (let baseY = spacing / 2; baseY < height; baseY += spacing) {
+          const deltaX = baseX - centerX;
+          const deltaY = baseY - centerY;
+          const distance = Math.hypot(deltaX, deltaY);
+          const influence = Math.max(0, 1 - distance / influenceRadius);
+          const push = influence * influence * 9 * strengthRef.current;
+          const directionX = distance > 0.01 ? deltaX / distance : 0;
+          const directionY = distance > 0.01 ? deltaY / distance : 0;
+          context.beginPath();
+          context.arc(baseX + directionX * push, baseY + directionY * push, radius, 0, Math.PI * 2);
+          context.fill();
+        }
+      }
+      if (Math.abs(target - strengthRef.current) > 0.002) frame = requestAnimationFrame(draw);
+    };
+    frame = requestAnimationFrame(draw);
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(draw);
+    });
+    observer.observe(parent);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [active, touchX, touchY, opacity]);
+
+  return <canvas ref={canvasRef} aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />;
+}
+
 export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsConfig }) {
   const [active, setActive] = useState(EMPTY);
   const [visible, setVisible] = useState(EMPTY);
@@ -117,7 +186,6 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
     const shown = sideEnabled && available && (
       previewing || (visible[`${side}Active` as const] && selectedZone === zone)
     );
-    const dotAlpha = config.backgroundOpacity / 100;
     const touchX = active[`${side}TouchX` as const] * 100;
     const touchY = active[`${side}TouchY` as const] * 100;
     const size = config[`${side}Size` as const];
@@ -146,27 +214,18 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
           overflow: "hidden",
           border: `1px solid rgba(255,255,255,${config.borderOpacity / 100})`,
           borderRadius: "12px",
-          backgroundImage: `radial-gradient(circle, rgba(255,255,255,${dotAlpha}) 0 2px, transparent 2.5px)`,
-          backgroundSize: "12px 12px",
+          background: "transparent",
           boxShadow: "none",
           opacity: shown ? 1 : 0,
           transition: "opacity 280ms ease-in-out",
           willChange: "opacity",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: "inherit",
-            background: `radial-gradient(circle at ${touchX}% ${touchY}%, rgba(255,255,255,.20) 0 12%, transparent 27%, rgba(255,255,255,.20) 36%, transparent 53%)`,
-            WebkitMaskImage: "radial-gradient(circle, #000 0 2.5px, transparent 3px)",
-            WebkitMaskSize: "12px 12px",
-            maskImage: "radial-gradient(circle, #000 0 2.5px, transparent 3px)",
-            maskSize: "12px 12px",
-            opacity: sideActive ? 1 : 0,
-            transition: "opacity 260ms ease-out",
-          }}
+        <ReactiveDots
+          active={sideActive}
+          touchX={touchX / 100}
+          touchY={touchY / 100}
+          opacity={config.backgroundOpacity}
         />
       </div>
     );
