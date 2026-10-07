@@ -39,4 +39,8 @@ def get_virtual_trackpads_state():
             "leftY": 1.0,
             "rightX": 1.0,
             "rightY": 1.0,
+            "leftTouchX": 0.5,
+            "leftTouchY": 0.5,
+            "rightTouchX": 0.5,
+            "rightTouchY": 0.5,
         }

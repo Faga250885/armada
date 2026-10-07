@@ -171,6 +171,8 @@ class VirtualTrackpads:
         self.pad_slots = {}
         self.last_zones = {"left": "bottom", "right": "bottom"}
         self.last_positions = {"left": (0.0, 1.0), "right": (1.0, 1.0)}
+        self.last_touches = {"left": (0.5, 0.5), "right": (0.5, 0.5)}
+        self.last_state_write = 0.0
         self.dirty_slots = set()
         self.running = True
         self.reload_requested = False
@@ -179,7 +181,11 @@ class VirtualTrackpads:
         self.press_releases = {}
         self.write_state()
 
-    def write_state(self):
+    def write_state(self, force=True):
+        now = time.monotonic()
+        if not force and now - self.last_state_write < 1 / 30:
+            return
+        self.last_state_write = now
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         state = {
             "leftActive": any(value[0] == "left" for value in self.pad_slots.values()),
@@ -190,6 +196,10 @@ class VirtualTrackpads:
             "leftY": self.last_positions["left"][1],
             "rightX": self.last_positions["right"][0],
             "rightY": self.last_positions["right"][1],
+            "leftTouchX": self.last_touches["left"][0],
+            "leftTouchY": self.last_touches["left"][1],
+            "rightTouchX": self.last_touches["right"][0],
+            "rightTouchY": self.last_touches["right"][1],
             "updated": time.time(),
         }
         temporary = STATE_PATH.with_suffix(".tmp")
@@ -277,6 +287,7 @@ class VirtualTrackpads:
             self.pad_slots[slot] = (side, zone, x, y)
             self.last_zones[side] = zone
             self.last_positions[side] = (x, y)
+            self.last_touches[side] = (local_x, local_y)
             point["started"] = time.monotonic()
             point["origin"] = (local_x, local_y)
             self.write_state()
@@ -291,6 +302,8 @@ class VirtualTrackpads:
                 self.haptic()
         self.ip.touch(side, slot % 256, True, local_x, local_y)
         point["sent"] = (local_x, local_y)
+        self.last_touches[side] = (local_x, local_y)
+        self.write_state(force=False)
 
     def release_slot(self, slot):
         assignment = self.pad_slots.pop(slot, None)

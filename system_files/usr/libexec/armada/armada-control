@@ -567,6 +567,10 @@ def action_get_virtual_trackpads_state(request):
         "leftY": float(state.get("leftY", 1.0)),
         "rightX": float(state.get("rightX", 1.0)),
         "rightY": float(state.get("rightY", 1.0)),
+        "leftTouchX": float(state.get("leftTouchX", 0.5)),
+        "leftTouchY": float(state.get("leftTouchY", 0.5)),
+        "rightTouchX": float(state.get("rightTouchX", 0.5)),
+        "rightTouchY": float(state.get("rightTouchY", 0.5)),
     }
 
 

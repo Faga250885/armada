@@ -12,6 +12,10 @@ const EMPTY: VirtualTrackpadsState = {
   leftY: 1,
   rightX: 1,
   rightY: 1,
+  leftTouchX: 0.5,
+  leftTouchY: 0.5,
+  rightTouchX: 0.5,
+  rightTouchY: 0.5,
 };
 const HOLD_MS = 1000;
 
@@ -88,6 +92,10 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
     active.leftY,
     active.rightX,
     active.rightY,
+    active.leftTouchX,
+    active.leftTouchY,
+    active.rightTouchX,
+    active.rightTouchY,
     config.leftEnabled,
     config.rightEnabled,
   ]);
@@ -110,6 +118,8 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
       previewing || (visible[`${side}Active` as const] && selectedZone === zone)
     );
     const dotAlpha = config.backgroundOpacity / 100;
+    const touchX = active[`${side}TouchX` as const] * 100;
+    const touchY = active[`${side}TouchY` as const] * 100;
     const size = config[`${side}Size` as const];
     const position = zone === "floating"
         ? {
@@ -142,7 +152,22 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
           transition: "opacity 280ms ease-in-out",
           willChange: "opacity",
         }}
-      />
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "inherit",
+            background: `radial-gradient(circle at ${touchX}% ${touchY}%, rgba(255,255,255,.9) 0, rgba(255,255,255,.45) 12%, transparent 34%)`,
+            WebkitMaskImage: "radial-gradient(circle, #000 0 2px, transparent 2.5px)",
+            WebkitMaskSize: "12px 12px",
+            maskImage: "radial-gradient(circle, #000 0 2px, transparent 2.5px)",
+            maskSize: "12px 12px",
+            opacity: sideActive ? 1 : 0,
+            transition: "opacity 180ms ease-out",
+          }}
+        />
+      </div>
     );
   };
   return createPortal(

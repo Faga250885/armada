@@ -49,7 +49,12 @@ export function Trackpads({ config, setConfig }: {
     return <Field label={t("trackpads.title")} description={t("trackpads.unsupported")} />;
   }
   const pads = config.virtualTrackpads;
-  const visualSettingsAvailable = pads.mode !== "halves";
+  const splitScreen = pads.mode === "halves";
+  const modeDescription = t(`trackpads.mode${pads.mode[0].toUpperCase()}${pads.mode.slice(1)}Description` as
+    | "trackpads.modeSimpleDescription"
+    | "trackpads.modeCornersDescription"
+    | "trackpads.modeFloatingDescription"
+    | "trackpads.modeHalvesDescription");
   const deckControllerSelected = config.controllerType === "deck-uhid";
   return (
     <>
@@ -63,46 +68,49 @@ export function Trackpads({ config, setConfig }: {
             { data: "floating", label: t("trackpads.modeFloating") },
             { data: "halves", label: t("trackpads.modeHalves") },
           ]}
-          onChange={(mode) => update({ mode }, true)}
+          onChange={(mode) => update(mode === "halves"
+            ? { mode, leftEnabled: true, rightEnabled: true }
+            : { mode }, true)}
         />
+        <Field description={modeDescription} />
         <ToggleRow
           label={t("trackpads.left")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
           value={pads.leftEnabled}
-          disabled={!deckControllerSelected}
+          disabled={!deckControllerSelected || splitScreen}
           onChange={(leftEnabled) => update({ leftEnabled }, true)}
         />
-        {visualSettingsAvailable && <SliderEdit
+        <SliderEdit
             label={t("trackpads.leftSize")}
             value={pads.leftSize}
             min={15}
             max={60}
             step={1}
-            disabled={!pads.leftEnabled}
+            disabled={!pads.leftEnabled || splitScreen}
             onChange={(leftSize) => update({ leftSize })}
-          />}
+          />
         <ToggleRow
           label={t("trackpads.right")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
           value={pads.rightEnabled}
-          disabled={!deckControllerSelected}
+          disabled={!deckControllerSelected || splitScreen}
           onChange={(rightEnabled) => update({ rightEnabled }, true)}
         />
-        {visualSettingsAvailable && <SliderEdit
+        <SliderEdit
             label={t("trackpads.rightSize")}
             value={pads.rightSize}
             min={15}
             max={60}
             step={1}
-            disabled={!pads.rightEnabled}
+            disabled={!pads.rightEnabled || splitScreen}
             onChange={(rightSize) => update({ rightSize })}
-          />}
-        {!visualSettingsAvailable && <Field description={t("trackpads.halvesInvisible")} />}
+          />
       <div className="armada-subheader">{t("trackpads.feedback")}</div>
         <ToggleRow
           label={t("trackpads.tapToClick")}
           description={t("trackpads.tapToClickDescription")}
           value={pads.tapToClick}
+          disabled={splitScreen}
           onChange={(tapToClick) => update({ tapToClick }, true)}
         />
         <SliderEdit
@@ -111,15 +119,17 @@ export function Trackpads({ config, setConfig }: {
           min={0}
           max={100}
           step={5}
+          disabled={splitScreen}
           onChange={(hapticStrength) => update({ hapticStrength })}
         />
-        {visualSettingsAvailable && <>
+        <>
           <SliderEdit
             label={t("trackpads.borderOpacity")}
             value={pads.borderOpacity}
             min={5}
             max={100}
             step={5}
+            disabled={splitScreen}
             onChange={(borderOpacity) => update({ borderOpacity })}
           />
           <SliderEdit
@@ -128,9 +138,10 @@ export function Trackpads({ config, setConfig }: {
             min={0}
             max={100}
             step={5}
+            disabled={splitScreen}
             onChange={(backgroundOpacity) => update({ backgroundOpacity })}
           />
-        </>}
+        </>
         <Field label={t("trackpads.touchscreenNotice")} />
         <Field label={t("trackpads.deckTargetNotice")} />
     </>

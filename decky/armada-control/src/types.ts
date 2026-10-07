@@ -128,6 +128,10 @@ export interface VirtualTrackpadsState {
   leftY: number;
   rightX: number;
   rightY: number;
+  leftTouchX: number;
+  leftTouchY: number;
+  rightTouchX: number;
+  rightTouchY: number;
 }
 
 export interface GameRef {
