@@ -4,6 +4,7 @@ from .privileged import call
 DEFAULT = {
     "supported": False,
     "enabled": False,
+    "blockTouchscreen": False,
     "leftEnabled": False,
     "rightEnabled": False,
     "mode": "simple",

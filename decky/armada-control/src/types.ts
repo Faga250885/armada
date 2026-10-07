@@ -109,6 +109,7 @@ export interface RgbConfig {
 export interface VirtualTrackpadsConfig {
   supported: boolean;
   enabled: boolean;
+  blockTouchscreen: boolean;
   leftEnabled: boolean;
   rightEnabled: boolean;
   mode: "simple" | "corners" | "floating" | "halves";

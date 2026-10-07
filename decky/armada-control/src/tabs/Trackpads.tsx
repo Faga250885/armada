@@ -162,6 +162,13 @@ export function Trackpads({ config, setConfig }: {
         </>
         <Field label={t("trackpads.touchscreenNotice")} />
         <Field label={t("trackpads.deckTargetNotice")} />
+      <div className="armada-subheader">{t("trackpads.touchscreen")}</div>
+        <ToggleRow
+          label={t("trackpads.blockTouchscreen")}
+          description={t("trackpads.blockTouchscreenDescription")}
+          value={pads.blockTouchscreen}
+          onChange={(blockTouchscreen) => update({ blockTouchscreen }, true)}
+        />
     </>
   );
 }

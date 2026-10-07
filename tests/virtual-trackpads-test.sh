@@ -7,6 +7,7 @@ from armada_virtual_trackpads import DEFAULT_CONFIG, point_in_trackpad_bounds, r
 
 config = sanitize_config({
     "enabled": True,
+    "blockTouchscreen": False,
     "leftEnabled": True,
     "rightEnabled": True,
     "mode": "corners",
@@ -24,6 +25,7 @@ assert config["backgroundOpacity"] == 45
 assert sanitize_config({"leftEnabled": 1})["leftEnabled"] is False
 assert sanitize_config({"enabled": False, "leftEnabled": True})["enabled"] is False
 assert sanitize_config({"leftEnabled": True})["enabled"] is True
+assert sanitize_config({"blockTouchscreen": True})["blockTouchscreen"] is True
 assert set(config) == set(DEFAULT_CONFIG)
 
 assert rotate_touch(0.25, 0.75, "left") == (0.75, 0.75)

@@ -1,5 +1,6 @@
 DEFAULT_CONFIG = {
     "enabled": False,
+    "blockTouchscreen": False,
     "leftEnabled": False,
     "rightEnabled": False,
     "mode": "simple",
@@ -29,7 +30,7 @@ def sanitize_config(value):
     result = dict(DEFAULT_CONFIG)
     if not isinstance(value, dict):
         return result
-    for key in ("enabled", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
+    for key in ("enabled", "blockTouchscreen", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
         if isinstance(value.get(key), bool):
             result[key] = value[key]
     for key, (minimum, maximum) in NUMBER_RANGES.items():

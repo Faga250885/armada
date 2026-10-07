@@ -247,9 +247,13 @@ class VirtualTrackpads:
         self.fd = fd
 
     def reload(self):
-        previous_active = self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
+        previous_active = self.config["blockTouchscreen"] or (
+            self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
+        )
         self.config = load_config()
-        active = self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
+        active = self.config["blockTouchscreen"] or (
+            self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
+        )
         if previous_active or not active:
             self.close_device()
         if active:
