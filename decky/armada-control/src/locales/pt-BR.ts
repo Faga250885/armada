@@ -241,6 +241,8 @@ export const ptBR = {
   "trackpads.feedback": "Resposta",
   "trackpads.tapToClick": "Toque para clicar",
   "trackpads.tapToClickDescription": "Um toque curto envia o evento Press do trackpad do Steam Deck.",
+  "trackpads.limitToBounds": "Limitar à área visível",
+  "trackpads.limitToBoundsDescription": "Para de reconhecer o contato ao sair do trackpad até levantar o dedo e tocar novamente.",
   "trackpads.hapticStrength": "Força da vibração (%)",
   "trackpads.borderOpacity": "Opacidade da borda (%)",
   "trackpads.backgroundOpacity": "Opacidade do fundo pontilhado (%)",

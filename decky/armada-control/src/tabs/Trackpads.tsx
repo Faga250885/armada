@@ -113,6 +113,13 @@ export function Trackpads({ config, setConfig }: {
           disabled={splitScreen}
           onChange={(tapToClick) => update({ tapToClick }, true)}
         />
+        <ToggleRow
+          label={t("trackpads.limitToBounds")}
+          description={t("trackpads.limitToBoundsDescription")}
+          value={pads.limitToBounds}
+          disabled={splitScreen}
+          onChange={(limitToBounds) => update({ limitToBounds }, true)}
+        />
         <SliderEdit
           label={t("trackpads.hapticStrength")}
           value={pads.hapticStrength}

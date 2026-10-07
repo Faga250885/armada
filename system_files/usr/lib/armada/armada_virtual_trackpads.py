@@ -3,6 +3,7 @@ DEFAULT_CONFIG = {
     "rightEnabled": False,
     "mode": "simple",
     "tapToClick": True,
+    "limitToBounds": False,
     "leftSize": 35,
     "rightSize": 35,
     "hapticStrength": 35,
@@ -27,7 +28,7 @@ def sanitize_config(value):
     result = dict(DEFAULT_CONFIG)
     if not isinstance(value, dict):
         return result
-    for key in ("leftEnabled", "rightEnabled", "tapToClick"):
+    for key in ("leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
         if isinstance(value.get(key), bool):
             result[key] = value[key]
     for key, (minimum, maximum) in NUMBER_RANGES.items():
@@ -106,3 +107,19 @@ def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, a
     left = 0.0 if side == "left" else 1.0 - width
     top = 0.0 if zone == "top" else 1.0 - height
     return clamp((x - left) / width), clamp((y - top) / height)
+
+
+def point_in_trackpad_bounds(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9):
+    """Return whether a screen point remains inside its assigned pad area."""
+    if zone == "half":
+        return x <= 0.5 if side == "left" else x > 0.5
+    height = config[f"{side}Size"] / 100.0
+    width = height / aspect_ratio
+    if zone == "floating":
+        return (
+            anchor_x - width / 2 <= x <= anchor_x + width / 2
+            and anchor_y - height / 2 <= y <= anchor_y + height / 2
+        )
+    left = 0.0 if side == "left" else 1.0 - width
+    top = 0.0 if zone == "top" else 1.0 - height
+    return left <= x <= left + width and top <= y <= top + height

@@ -3,13 +3,14 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHONPATH="$ROOT/system_files/usr/lib/armada" python3 - <<'PYEOF'
-from armada_virtual_trackpads import DEFAULT_CONFIG, rotate_touch, sanitize_config, trackpad_at, trackpad_coordinates
+from armada_virtual_trackpads import DEFAULT_CONFIG, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_at, trackpad_coordinates
 
 config = sanitize_config({
     "leftEnabled": True,
     "rightEnabled": True,
     "mode": "corners",
     "tapToClick": True,
+    "limitToBounds": True,
     "leftSize": 35,
     "rightSize": 40,
     "hapticStrength": 500,
@@ -64,6 +65,10 @@ floating_center = trackpad_coordinates(0.25, 0.5, "left", "floating", floating, 
 assert floating_center == (0.5, 0.5)
 floating_move = trackpad_coordinates(0.27, 0.53, "left", "floating", floating, 0.25, 0.5)
 assert floating_move[0] > 0.5 and floating_move[1] > 0.5
+assert point_in_trackpad_bounds(0.26, 0.52, "left", "floating", floating, 0.25, 0.5)
+assert not point_in_trackpad_bounds(0.49, 0.52, "left", "floating", floating, 0.25, 0.5)
+assert point_in_trackpad_bounds(0.05, 0.9, "left", "bottom", simple)
+assert not point_in_trackpad_bounds(0.3, 0.9, "left", "bottom", simple)
 
 print("Virtual trackpad geometry and configuration tests passed")
 PYEOF

@@ -23,6 +23,8 @@ export const es: Record<TranslationKey, string> = {
   "trackpads.feedback": "Respuesta",
   "trackpads.tapToClick": "Toque para clic",
   "trackpads.tapToClickDescription": "Un toque corto envía el evento de presión del trackpad de Steam Deck.",
+  "trackpads.limitToBounds": "Limitar al área visible",
+  "trackpads.limitToBoundsDescription": "Deja de reconocer el contacto al salir del trackpad hasta levantar el dedo y volver a tocar.",
   "trackpads.hapticStrength": "Fuerza de vibración (%)",
   "trackpads.borderOpacity": "Opacidad del borde (%)",
   "trackpads.backgroundOpacity": "Opacidad del fondo punteado (%)",

@@ -7,6 +7,7 @@ DEFAULT = {
     "rightEnabled": False,
     "mode": "simple",
     "tapToClick": True,
+    "limitToBounds": False,
     "leftSize": 35,
     "rightSize": 35,
     "hapticStrength": 35,

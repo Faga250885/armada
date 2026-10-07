@@ -15,7 +15,7 @@ from pathlib import Path
 from gi.repository import Gio, GLib
 
 sys.path.insert(0, "/usr/lib/armada")
-from armada_virtual_trackpads import DEFAULT_CONFIG, clamp, rotate_touch, sanitize_config, trackpad_coordinates, trackpad_zone_at
+from armada_virtual_trackpads import DEFAULT_CONFIG, clamp, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_coordinates, trackpad_zone_at
 
 
 CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
@@ -169,6 +169,7 @@ class VirtualTrackpads:
         self.current_slot = 0
         self.slots = {}
         self.pad_slots = {}
+        self.blocked_slots = set()
         self.last_zones = {"left": "bottom", "right": "bottom"}
         self.last_positions = {"left": (0.0, 1.0), "right": (1.0, 1.0)}
         self.last_touches = {"left": (0.5, 0.5), "right": (0.5, 0.5)}
@@ -220,6 +221,7 @@ class VirtualTrackpads:
             except Exception:
                 pass
         self.pad_slots.clear()
+        self.blocked_slots.clear()
         self.slots.clear()
         self.dirty_slots.clear()
         for side in ("left", "right"):
@@ -268,6 +270,8 @@ class VirtualTrackpads:
             pass
 
     def update_slot(self, slot):
+        if slot in self.blocked_slots:
+            return
         point = self.slots.get(slot)
         if not point or point.get("tracking", -1) < 0 or "x" not in point or "y" not in point:
             return
@@ -294,6 +298,17 @@ class VirtualTrackpads:
             self.haptic()
         else:
             side, zone, anchor_x, anchor_y = assignment
+            if self.config["limitToBounds"] and not point_in_trackpad_bounds(
+                x, y, side, zone, self.config, anchor_x, anchor_y
+            ):
+                old_x, old_y = point.get("sent", (0.5, 0.5))
+                try:
+                    self.ip.touch(side, slot % 256, False, old_x, old_y)
+                finally:
+                    self.pad_slots.pop(slot, None)
+                    self.blocked_slots.add(slot)
+                    self.write_state()
+                return
             local_x, local_y = trackpad_coordinates(
                 x, y, side, zone, self.config, anchor_x, anchor_y
             )
@@ -306,6 +321,7 @@ class VirtualTrackpads:
         self.write_state(force=False)
 
     def release_slot(self, slot):
+        self.blocked_slots.discard(slot)
         assignment = self.pad_slots.pop(slot, None)
         point = self.slots.pop(slot, {})
         if assignment:
@@ -345,6 +361,7 @@ class VirtualTrackpads:
                     if value < 0:
                         self.release_slot(self.current_slot)
                     else:
+                        self.blocked_slots.discard(self.current_slot)
                         self.slots[self.current_slot] = {"tracking": value}
                 elif code == ABS_MT_POSITION_X:
                     self.slots.setdefault(self.current_slot, {})["x"] = value

@@ -157,19 +157,15 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
         <div
           style={{
             position: "absolute",
-            left: `${touchX}%`,
-            top: `${touchY}%`,
-            width: "46%",
-            aspectRatio: "1 / 1",
-            borderRadius: "50%",
-            transform: "translate(-50%, -50%)",
-            background: "radial-gradient(circle, rgba(255,255,255,.58) 0, rgba(255,255,255,.28) 38%, transparent 74%)",
-            WebkitMaskImage: "radial-gradient(circle, #000 0 2px, transparent 2.5px)",
+            inset: 0,
+            borderRadius: "inherit",
+            background: `radial-gradient(circle at ${touchX}% ${touchY}%, rgba(255,255,255,.20) 0 12%, transparent 27%, rgba(255,255,255,.20) 36%, transparent 53%)`,
+            WebkitMaskImage: "radial-gradient(circle, #000 0 2.5px, transparent 3px)",
             WebkitMaskSize: "12px 12px",
-            maskImage: "radial-gradient(circle, #000 0 2px, transparent 2.5px)",
+            maskImage: "radial-gradient(circle, #000 0 2.5px, transparent 3px)",
             maskSize: "12px 12px",
             opacity: sideActive ? 1 : 0,
-            transition: "left 75ms linear, top 75ms linear, opacity 260ms ease-out",
+            transition: "opacity 260ms ease-out",
           }}
         />
       </div>

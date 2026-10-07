@@ -112,6 +112,7 @@ export interface VirtualTrackpadsConfig {
   rightEnabled: boolean;
   mode: "simple" | "corners" | "floating" | "halves";
   tapToClick: boolean;
+  limitToBounds: boolean;
   leftSize: number;
   rightSize: number;
   hapticStrength: number;

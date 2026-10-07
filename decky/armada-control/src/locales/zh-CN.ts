@@ -241,6 +241,8 @@ export const zhCN = {
   "trackpads.feedback": "反馈",
   "trackpads.tapToClick": "轻触点击",
   "trackpads.tapToClickDescription": "短按会发送 Steam Deck 触控板 Press 事件。",
+  "trackpads.limitToBounds": "限制在可见区域内",
+  "trackpads.limitToBoundsDescription": "手指离开触控板后立即停止识别，必须抬起并再次触摸才能重新启用。",
   "trackpads.hapticStrength": "振动强度 (%)",
   "trackpads.borderOpacity": "边框不透明度 (%)",
   "trackpads.backgroundOpacity": "点状背景不透明度 (%)",
