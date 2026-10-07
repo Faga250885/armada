@@ -204,6 +204,9 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0060_Mangmi-Pocket-Max-SPI-joypad.patch`
   source: https://github.com/ROCKNIX/distribution/blob/807c74fc46c124891d8aa9b57a68533d38e9a6b2/projects/ROCKNIX/devices/SM8250/patches/linux/0060_Mangmi-Pocket-Max-SPI-joypad.patch
   upstream: unknown
+- `patches/0060b-input-mangmi-pocket-max-keep-trigger-conversion-independent-of-calibration.patch`
+  source: armada
+  upstream: local
 - `patches/0031_input--Add-driver-for-RSInput-Gamepad.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8550/patches/linux/0031_input--Add-driver-for-RSInput-Gamepad.patch
   upstream: unknown
@@ -472,6 +475,9 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0013-add-force-feedback.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8250/patches/linux/0013-add-force-feedback.patch
   upstream: unknown
+- `patches/0008a-input-retroid-keep-trigger-conversion-independent-of-calibration.patch`
+  source: armada
+  upstream: local
 - `patches/0063_Mangmi-Pocket-Max-HL7139-charge-pump.patch`
   source: https://github.com/ROCKNIX/distribution/blob/807c74fc46c124891d8aa9b57a68533d38e9a6b2/projects/ROCKNIX/devices/SM8250/patches/linux/0063_Mangmi-Pocket-Max-HL7139-charge-pump.patch
   upstream: unknown
