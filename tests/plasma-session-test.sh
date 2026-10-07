@@ -125,7 +125,7 @@ session "$home" bottom
 child_env="/usr/bin/env XDG_CONFIG_HOME='$home'"
 expect_args \
     /usr/bin/env "XDG_CONFIG_HOME=$home/armada/plasma/bottom" /test/kwin \
-    --x11-display :7 --fullscreen --no-lockscreen --xwayland \
+    --x11-display :7 --socket armada-plasma-bottom --fullscreen --no-lockscreen --xwayland \
     --exit-with-session "$child_env /usr/bin/plasmashell -p org.kde.plasma.mobileshell" \
     "$child_env /usr/libexec/kf6/polkit-kde-authentication-agent-1"
 [[ ! -s "$log" ]] || fail "bottom touched other units: $(<"$log")"
@@ -168,7 +168,7 @@ args
 
 session "$home" bottom desktop
 args
-[[ "${actual[9]}" == "$child_env /usr/bin/plasmashell" ]]
+[[ "${actual[11]}" == "$child_env /usr/bin/plasmashell" ]]
 [[ "$(readlink "$home/plasmashellrc")" == plasmashellrc.desktop ]]
 [[ "$(envval XDG_CONFIG_DIRS)" == /etc/xdg ]]
 ! grep -q '^PLASMA_PLATFORM=' "$tmp/env"
@@ -189,7 +189,7 @@ child_env="/usr/bin/env XDG_CONFIG_HOME='$home'"
 kwin="$home/armada/plasma/nested"
 expect_args \
     /usr/bin/env "XDG_CONFIG_HOME=$kwin" /test/kwin \
-    --x11-display :7 --fullscreen --no-lockscreen --xwayland \
+    --x11-display :7 --socket armada-plasma-nested --fullscreen --no-lockscreen --xwayland \
     --inputmethod /usr/bin/plasma-keyboard \
     --exit-with-session "$child_env /usr/bin/plasmashell" \
     "$child_env /usr/libexec/kf6/polkit-kde-authentication-agent-1" \
@@ -209,7 +209,7 @@ printf 'desktop_session = "armada-plasma-mobile.desktop"\n' >"$home/steamos-mana
 session "$home" nested
 expect_args \
     /usr/bin/env "XDG_CONFIG_HOME=$kwin" /test/kwin \
-    --x11-display :7 --fullscreen --no-lockscreen --xwayland \
+    --x11-display :7 --socket armada-plasma-nested --fullscreen --no-lockscreen --xwayland \
     --exit-with-session "$child_env /usr/bin/plasmashell -p org.kde.plasma.mobileshell" \
     "$child_env /usr/libexec/kf6/polkit-kde-authentication-agent-1" \
     '/usr/bin/kscreen-doctor output.X11-0.scale.1.5'
@@ -217,7 +217,7 @@ expect_args \
 printf 'saved layout\n' >"$kwin/kwinoutputconfig.json"
 session "$home" nested desktop
 args
-[[ "${#actual[@]}" == 13 && "${actual[11]}" == "$child_env /usr/bin/plasmashell" ]]
+[[ "${#actual[@]}" == 15 && "${actual[13]}" == "$child_env /usr/bin/plasmashell" ]]
 
 : >"$log"
 extra=(ARMADA_TEST_NESTED_UNITS=armada-plasma-nested-1.service)
