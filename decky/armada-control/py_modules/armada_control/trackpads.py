@@ -5,7 +5,7 @@ DEFAULT = {
     "supported": False,
     "leftEnabled": False,
     "rightEnabled": False,
-    "fourPads": False,
+    "mode": "simple",
     "tapToClick": True,
     "leftSize": 35,
     "rightSize": 35,
@@ -30,4 +30,13 @@ def get_virtual_trackpads_state():
     try:
         return call("get_virtual_trackpads_state")
     except (OSError, RuntimeError, KeyError, TypeError, ValueError):
-        return {"leftActive": False, "rightActive": False, "leftCorner": "bottom", "rightCorner": "bottom"}
+        return {
+            "leftActive": False,
+            "rightActive": False,
+            "leftZone": "bottom",
+            "rightZone": "bottom",
+            "leftX": 0.0,
+            "leftY": 1.0,
+            "rightX": 1.0,
+            "rightY": 1.0,
+        }

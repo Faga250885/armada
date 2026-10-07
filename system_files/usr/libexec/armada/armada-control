@@ -530,9 +530,11 @@ def action_set_virtual_trackpads(request):
     required = set(VIRTUAL_TRACKPADS_DEFAULTS)
     if set(requested) != required:
         raise ValueError("incomplete virtual trackpad configuration")
-    for key in ("leftEnabled", "rightEnabled", "fourPads", "tapToClick"):
+    for key in ("leftEnabled", "rightEnabled", "tapToClick"):
         if not isinstance(requested[key], bool):
             raise ValueError(f"invalid {key}")
+    if requested["mode"] not in ("simple", "corners", "floating", "halves"):
+        raise ValueError("invalid mode")
     for key, (minimum, maximum) in VIRTUAL_TRACKPAD_NUMBER_RANGES.items():
         value = requested[key]
         if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
@@ -559,8 +561,12 @@ def action_get_virtual_trackpads_state(request):
     return {
         "leftActive": bool(state.get("leftActive")),
         "rightActive": bool(state.get("rightActive")),
-        "leftCorner": state.get("leftCorner") if state.get("leftCorner") in ("top", "bottom") else "bottom",
-        "rightCorner": state.get("rightCorner") if state.get("rightCorner") in ("top", "bottom") else "bottom",
+        "leftZone": state.get("leftZone") if state.get("leftZone") in ("top", "bottom", "floating", "half") else "bottom",
+        "rightZone": state.get("rightZone") if state.get("rightZone") in ("top", "bottom", "floating", "half") else "bottom",
+        "leftX": float(state.get("leftX", 0.0)),
+        "leftY": float(state.get("leftY", 1.0)),
+        "rightX": float(state.get("rightX", 1.0)),
+        "rightY": float(state.get("rightY", 1.0)),
     }
 
 

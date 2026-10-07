@@ -3,12 +3,12 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHONPATH="$ROOT/system_files/usr/lib/armada" python3 - <<'PYEOF'
-from armada_virtual_trackpads import DEFAULT_CONFIG, rotate_touch, sanitize_config, trackpad_at
+from armada_virtual_trackpads import DEFAULT_CONFIG, rotate_touch, sanitize_config, trackpad_at, trackpad_coordinates
 
 config = sanitize_config({
     "leftEnabled": True,
     "rightEnabled": True,
-    "fourPads": True,
+    "mode": "corners",
     "tapToClick": True,
     "leftSize": 35,
     "rightSize": 40,
@@ -46,15 +46,31 @@ assert top_left and top_left[:2] == ("left", "top")
 assert bottom_left and bottom_left[:2] == ("left", "bottom")
 assert top_right and top_right[:2] == ("right", "top")
 assert bottom_right and bottom_right[:2] == ("right", "bottom")
-two_pads = {**config, "fourPads": False}
-assert trackpad_zone_at(0.05, 0.1, two_pads) is None
+simple = {**config, "mode": "simple"}
+assert trackpad_zone_at(0.05, 0.1, simple) is None
+assert trackpad_zone_at(0.05, 0.9, simple)[:2] == ("left", "bottom")
+
+floating = {**config, "mode": "floating"}
+assert trackpad_zone_at(0.45, 0.42, floating) == ("left", "floating", 0.5, 0.5)
+assert trackpad_zone_at(0.55, 0.68, floating) == ("right", "floating", 0.5, 0.5)
+
+halves = {**config, "mode": "halves"}
+assert trackpad_zone_at(0.25, 0.4, halves) == ("left", "half", 0.5, 0.4)
+assert trackpad_zone_at(0.75, 0.6, halves) == ("right", "half", 0.5, 0.6)
+assert trackpad_coordinates(0.3, 0.4, "left", "half", halves) == (0.6, 0.4)
+right_half = trackpad_coordinates(0.8, 0.6, "right", "half", halves)
+assert abs(right_half[0] - 0.6) < 1e-9 and right_half[1] == 0.6
+floating_center = trackpad_coordinates(0.25, 0.5, "left", "floating", floating, 0.25, 0.5)
+assert floating_center == (0.5, 0.5)
+floating_move = trackpad_coordinates(0.27, 0.53, "left", "floating", floating, 0.25, 0.5)
+assert floating_move[0] > 0.5 and floating_move[1] > 0.5
 
 print("Virtual trackpad geometry and configuration tests passed")
 PYEOF
 
 grep -Fq 'borderRadius: "12px"' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
 grep -Fq 'radial-gradient(circle' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
-grep -Fq 'HOLD_MS = 3000' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'HOLD_MS = 1000' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
 grep -Fq '{ id: "Trackpads", title: tabIcons.Trackpads' "$ROOT/decky/armada-control/src/Content.tsx"
 ! grep -Fq '<Trackpads config={config} setConfig={setConfig} />' "$ROOT/decky/armada-control/src/tabs/Settings.tsx"
 grep -Fq 'fcntl.ioctl(fd, EVIOCGRAB, 1)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"

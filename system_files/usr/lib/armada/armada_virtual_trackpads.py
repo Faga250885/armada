@@ -1,7 +1,7 @@
 DEFAULT_CONFIG = {
     "leftEnabled": False,
     "rightEnabled": False,
-    "fourPads": False,
+    "mode": "simple",
     "tapToClick": True,
     "leftSize": 35,
     "rightSize": 35,
@@ -27,13 +27,18 @@ def sanitize_config(value):
     result = dict(DEFAULT_CONFIG)
     if not isinstance(value, dict):
         return result
-    for key in ("leftEnabled", "rightEnabled", "fourPads", "tapToClick"):
+    for key in ("leftEnabled", "rightEnabled", "tapToClick"):
         if isinstance(value.get(key), bool):
             result[key] = value[key]
     for key, (minimum, maximum) in NUMBER_RANGES.items():
         number = value.get(key)
         if isinstance(number, int) and not isinstance(number, bool):
             result[key] = max(minimum, min(maximum, number))
+    if value.get("mode") in ("simple", "corners", "floating", "halves"):
+        result["mode"] = value["mode"]
+    elif value.get("fourPads") is True:
+        # Preserve the layout selected by images created before modes existed.
+        result["mode"] = "corners"
     return result
 
 
@@ -70,9 +75,34 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
         height = config[f"{side}Size"] / 100.0
         width = height / aspect_ratio
         left = 0.0 if side == "left" else 1.0 - width
-        corners = ("top", "bottom") if config["fourPads"] else ("bottom",)
+        mode = config["mode"]
+        if mode in ("floating", "halves"):
+            if (side == "left" and x <= 0.5) or (side == "right" and x > 0.5):
+                if mode == "halves":
+                    local_x = x * 2.0 if side == "left" else (x - 0.5) * 2.0
+                    return side, "half", clamp(local_x), clamp(y)
+                return side, "floating", 0.5, 0.5
+            continue
+        corners = ("top", "bottom") if mode == "corners" else ("bottom",)
         for corner in corners:
             top = 0.0 if corner == "top" else 1.0 - height
             if left <= x <= left + width and top <= y <= top + height:
                 return side, corner, clamp((x - left) / width), clamp((y - top) / height)
     return None
+
+
+def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9):
+    """Map a screen point to the selected virtual Steam Deck touchpad."""
+    if zone == "half":
+        local_x = x * 2.0 if side == "left" else (x - 0.5) * 2.0
+        return clamp(local_x), clamp(y)
+    height = config[f"{side}Size"] / 100.0
+    width = height / aspect_ratio
+    if zone == "floating":
+        return (
+            clamp(0.5 + (x - anchor_x) / width),
+            clamp(0.5 + (y - anchor_y) / height),
+        )
+    left = 0.0 if side == "left" else 1.0 - width
+    top = 0.0 if zone == "top" else 1.0 - height
+    return clamp((x - left) / width), clamp((y - top) / height)

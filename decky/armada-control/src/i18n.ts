@@ -2,6 +2,7 @@ import { en, type TranslationKey } from "./locales/en";
 import { zhCN } from "./locales/zh-CN";
 import { ptBR } from "./locales/pt-BR";
 import { ptPT } from "./locales/pt-PT";
+import { es } from "./locales/es";
 
 export type { TranslationKey } from "./locales/en";
 type Variables = Record<string, string | number>;
@@ -11,6 +12,7 @@ export const localeStrings = {
   "zh-CN": zhCN,
   "pt-BR": ptBR,
   "pt-PT": ptPT,
+  es,
 } as const satisfies Record<string, Record<TranslationKey, string>>;
 
 export type Locale = keyof typeof localeStrings;
@@ -21,6 +23,7 @@ export function localeFromLanguage(language: unknown): Locale | null {
   if (["schinese", "steamchina-schinese", "zh", "zh-cn", "zh-hans", "zh-sg"].includes(normalized)) return "zh-CN";
   if (["pt-br", "brazilian", "pt-brasil"].includes(normalized)) return "pt-BR";
   if (["pt", "pt-pt", "portuguese"].includes(normalized)) return "pt-PT";
+  if (["es", "es-es", "es-419", "spanish", "latam", "spanish-latin-america"].includes(normalized)) return "es";
   return normalized ? "en" : null;
 }
 

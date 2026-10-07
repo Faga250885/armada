@@ -3,7 +3,7 @@ import { Field } from "@decky/ui";
 import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { setVirtualTrackpads } from "../backend";
-import { SliderEdit, ToggleRow } from "../components/widgets";
+import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import { t } from "../i18n";
 import type { Config, VirtualTrackpadsConfig } from "../types";
 
@@ -49,15 +49,21 @@ export function Trackpads({ config, setConfig }: {
     return <Field label={t("trackpads.title")} description={t("trackpads.unsupported")} />;
   }
   const pads = config.virtualTrackpads;
+  const visualSettingsAvailable = pads.mode !== "halves";
   const deckControllerSelected = config.controllerType === "deck-uhid";
   return (
     <>
       <div className="armada-subheader">{t("trackpads.title")}</div>
-        <ToggleRow
-          label={t("trackpads.fourPads")}
-          description={t("trackpads.fourPadsDescription")}
-          value={pads.fourPads}
-          onChange={(fourPads) => update({ fourPads }, true)}
+        <SelectEdit
+          label={t("trackpads.mode")}
+          value={pads.mode}
+          options={[
+            { data: "simple", label: t("trackpads.modeSimple") },
+            { data: "corners", label: t("trackpads.modeCorners") },
+            { data: "floating", label: t("trackpads.modeFloating") },
+            { data: "halves", label: t("trackpads.modeHalves") },
+          ]}
+          onChange={(mode) => update({ mode }, true)}
         />
         <ToggleRow
           label={t("trackpads.left")}
@@ -66,15 +72,15 @@ export function Trackpads({ config, setConfig }: {
           disabled={!deckControllerSelected}
           onChange={(leftEnabled) => update({ leftEnabled }, true)}
         />
-        <SliderEdit
-          label={t("trackpads.leftSize")}
-          value={pads.leftSize}
-          min={15}
-          max={60}
-          step={1}
-          disabled={!pads.leftEnabled}
-          onChange={(leftSize) => update({ leftSize })}
-        />
+        {visualSettingsAvailable && <SliderEdit
+            label={t("trackpads.leftSize")}
+            value={pads.leftSize}
+            min={15}
+            max={60}
+            step={1}
+            disabled={!pads.leftEnabled}
+            onChange={(leftSize) => update({ leftSize })}
+          />}
         <ToggleRow
           label={t("trackpads.right")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
@@ -82,15 +88,16 @@ export function Trackpads({ config, setConfig }: {
           disabled={!deckControllerSelected}
           onChange={(rightEnabled) => update({ rightEnabled }, true)}
         />
-        <SliderEdit
-          label={t("trackpads.rightSize")}
-          value={pads.rightSize}
-          min={15}
-          max={60}
-          step={1}
-          disabled={!pads.rightEnabled}
-          onChange={(rightSize) => update({ rightSize })}
-        />
+        {visualSettingsAvailable && <SliderEdit
+            label={t("trackpads.rightSize")}
+            value={pads.rightSize}
+            min={15}
+            max={60}
+            step={1}
+            disabled={!pads.rightEnabled}
+            onChange={(rightSize) => update({ rightSize })}
+          />}
+        {!visualSettingsAvailable && <Field description={t("trackpads.halvesInvisible")} />}
       <div className="armada-subheader">{t("trackpads.feedback")}</div>
         <ToggleRow
           label={t("trackpads.tapToClick")}
@@ -106,22 +113,24 @@ export function Trackpads({ config, setConfig }: {
           step={5}
           onChange={(hapticStrength) => update({ hapticStrength })}
         />
-        <SliderEdit
-          label={t("trackpads.borderOpacity")}
-          value={pads.borderOpacity}
-          min={5}
-          max={100}
-          step={5}
-          onChange={(borderOpacity) => update({ borderOpacity })}
-        />
-        <SliderEdit
-          label={t("trackpads.backgroundOpacity")}
-          value={pads.backgroundOpacity}
-          min={0}
-          max={100}
-          step={5}
-          onChange={(backgroundOpacity) => update({ backgroundOpacity })}
-        />
+        {visualSettingsAvailable && <>
+          <SliderEdit
+            label={t("trackpads.borderOpacity")}
+            value={pads.borderOpacity}
+            min={5}
+            max={100}
+            step={5}
+            onChange={(borderOpacity) => update({ borderOpacity })}
+          />
+          <SliderEdit
+            label={t("trackpads.backgroundOpacity")}
+            value={pads.backgroundOpacity}
+            min={0}
+            max={100}
+            step={5}
+            onChange={(backgroundOpacity) => update({ backgroundOpacity })}
+          />
+        </>}
         <Field label={t("trackpads.touchscreenNotice")} />
         <Field label={t("trackpads.deckTargetNotice")} />
     </>

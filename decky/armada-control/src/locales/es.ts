@@ -1,0 +1,30 @@
+import { en, type TranslationKey } from "./en";
+
+// Armada Control can now follow Steam/Decky's Spanish locale. Untranslated
+// sections retain the established English fallback while the complete virtual
+// trackpad menu is presented in Spanish.
+export const es: Record<TranslationKey, string> = {
+  ...en,
+  "trackpads.title": "Trackpads virtuales",
+  "trackpads.mode": "Modo de los trackpads",
+  "trackpads.modeSimple": "Esquinas inferiores",
+  "trackpads.modeCorners": "Cuatro esquinas",
+  "trackpads.modeFloating": "Dinámicos al toque",
+  "trackpads.modeHalves": "Pantalla dividida (invisible)",
+  "trackpads.halvesInvisible": "Este modo es completamente invisible y no tiene ajustes de tamaño ni apariencia. Cada mitad de la pantalla funciona directamente como su trackpad correspondiente.",
+  "trackpads.left": "Trackpad izquierdo",
+  "trackpads.right": "Trackpad derecho",
+  "trackpads.leftSize": "Tamaño izquierdo (%)",
+  "trackpads.rightSize": "Tamaño derecho (%)",
+  "trackpads.feedback": "Respuesta",
+  "trackpads.tapToClick": "Toque para clic",
+  "trackpads.tapToClickDescription": "Un toque corto envía el evento de presión del trackpad de Steam Deck.",
+  "trackpads.hapticStrength": "Fuerza de vibración (%)",
+  "trackpads.borderOpacity": "Opacidad del borde (%)",
+  "trackpads.backgroundOpacity": "Opacidad del fondo punteado (%)",
+  "trackpads.touchscreenNotice": "Mientras estén activos, el toque normal de la pantalla queda bloqueado fuera de las zonas de los trackpads.",
+  "trackpads.deckTargetNotice": "La emulación del control de Steam Deck debe permanecer seleccionada mientras los trackpads virtuales estén activos.",
+  "trackpads.selectDeckFirst": "Primero selecciona arriba la emulación de Steam Deck.",
+  "trackpads.unsupported": "Los trackpads virtuales no son compatibles con este dispositivo.",
+  "trackpads.saveError": "No se pudieron actualizar los trackpads virtuales",
+};

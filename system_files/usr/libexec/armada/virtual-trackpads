@@ -15,7 +15,7 @@ from pathlib import Path
 from gi.repository import Gio, GLib
 
 sys.path.insert(0, "/usr/lib/armada")
-from armada_virtual_trackpads import DEFAULT_CONFIG, clamp, rotate_touch, sanitize_config, trackpad_zone_at
+from armada_virtual_trackpads import DEFAULT_CONFIG, clamp, rotate_touch, sanitize_config, trackpad_coordinates, trackpad_zone_at
 
 
 CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
@@ -169,7 +169,8 @@ class VirtualTrackpads:
         self.current_slot = 0
         self.slots = {}
         self.pad_slots = {}
-        self.last_corners = {"left": "bottom", "right": "bottom"}
+        self.last_zones = {"left": "bottom", "right": "bottom"}
+        self.last_positions = {"left": (0.0, 1.0), "right": (1.0, 1.0)}
         self.dirty_slots = set()
         self.running = True
         self.reload_requested = False
@@ -183,8 +184,12 @@ class VirtualTrackpads:
         state = {
             "leftActive": any(value[0] == "left" for value in self.pad_slots.values()),
             "rightActive": any(value[0] == "right" for value in self.pad_slots.values()),
-            "leftCorner": self.last_corners["left"],
-            "rightCorner": self.last_corners["right"],
+            "leftZone": self.last_zones["left"],
+            "rightZone": self.last_zones["right"],
+            "leftX": self.last_positions["left"][0],
+            "leftY": self.last_positions["left"][1],
+            "rightX": self.last_positions["right"][0],
+            "rightY": self.last_positions["right"][1],
             "updated": time.time(),
         }
         temporary = STATE_PATH.with_suffix(".tmp")
@@ -199,7 +204,7 @@ class VirtualTrackpads:
                 pass
             os.close(self.fd)
             self.fd = None
-        for slot, (side, _corner) in list(self.pad_slots.items()):
+        for slot, (side, _zone, _anchor_x, _anchor_y) in list(self.pad_slots.items()):
             try:
                 self.ip.touch(side, slot % 256, False, 0.0, 0.0)
             except Exception:
@@ -266,23 +271,21 @@ class VirtualTrackpads:
             match = trackpad_zone_at(x, y, self.config)
             if match is None:
                 return
-            side, corner, local_x, local_y = match
+            side, zone, local_x, local_y = match
             if any(value[0] == side for value in self.pad_slots.values()):
                 return
-            self.pad_slots[slot] = (side, corner)
-            self.last_corners[side] = corner
+            self.pad_slots[slot] = (side, zone, x, y)
+            self.last_zones[side] = zone
+            self.last_positions[side] = (x, y)
             point["started"] = time.monotonic()
             point["origin"] = (local_x, local_y)
             self.write_state()
             self.haptic()
         else:
-            side, corner = assignment
-            height = self.config[f"{side}Size"] / 100.0
-            width = height / (16 / 9)
-            left = 0.0 if side == "left" else 1.0 - width
-            top = 0.0 if corner == "top" else 1.0 - height
-            local_x = clamp((x - left) / width)
-            local_y = clamp((y - top) / height)
+            side, zone, anchor_x, anchor_y = assignment
+            local_x, local_y = trackpad_coordinates(
+                x, y, side, zone, self.config, anchor_x, anchor_y
+            )
             old = point.get("sent")
             if old is not None and abs(local_x - old[0]) + abs(local_y - old[1]) >= 0.035:
                 self.haptic()
@@ -293,7 +296,7 @@ class VirtualTrackpads:
         assignment = self.pad_slots.pop(slot, None)
         point = self.slots.pop(slot, {})
         if assignment:
-            side, _corner = assignment
+            side, _zone, _anchor_x, _anchor_y = assignment
             x, y = point.get("sent", (0.0, 0.0))
             try:
                 origin = point.get("origin", (x, y))

@@ -6,10 +6,14 @@ import type { VirtualTrackpadsConfig, VirtualTrackpadsState } from "../types";
 const EMPTY: VirtualTrackpadsState = {
   leftActive: false,
   rightActive: false,
-  leftCorner: "bottom",
-  rightCorner: "bottom",
+  leftZone: "bottom",
+  rightZone: "bottom",
+  leftX: 0,
+  leftY: 1,
+  rightX: 1,
+  rightY: 1,
 };
-const HOLD_MS = 3000;
+const HOLD_MS = 1000;
 
 export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsConfig }) {
   const [active, setActive] = useState(EMPTY);
@@ -52,12 +56,20 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
   useEffect(() => {
     for (const side of ["left", "right"] as const) {
       const key = `${side}Active` as const;
-      const cornerKey = `${side}Corner` as const;
+      const zoneKey = `${side}Zone` as const;
+      const xKey = `${side}X` as const;
+      const yKey = `${side}Y` as const;
       const sideEnabled = config[`${side}Enabled` as const];
       const oldTimer = hideTimers.current[side];
       if (oldTimer) window.clearTimeout(oldTimer);
       if (active[key] && sideEnabled) {
-        setVisible((current) => ({ ...current, [key]: true, [cornerKey]: active[cornerKey] }));
+        setVisible((current) => ({
+          ...current,
+          [key]: true,
+          [zoneKey]: active[zoneKey],
+          [xKey]: active[xKey],
+          [yKey]: active[yKey],
+        }));
       } else if (visible[key]) {
         hideTimers.current[side] = window.setTimeout(() => {
           setVisible((current) => ({ ...current, [key]: false }));
@@ -67,29 +79,59 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
     return () => {
       for (const timer of Object.values(hideTimers.current)) window.clearTimeout(timer);
     };
-  }, [active.leftActive, active.rightActive, config.leftEnabled, config.rightEnabled]);
+  }, [
+    active.leftActive,
+    active.rightActive,
+    active.leftZone,
+    active.rightZone,
+    active.leftX,
+    active.leftY,
+    active.rightX,
+    active.rightY,
+    config.leftEnabled,
+    config.rightEnabled,
+  ]);
 
-  if (!enabled || typeof document === "undefined") return null;
-  const pad = (side: "left" | "right", corner: "top" | "bottom") => {
+  // Full-screen halves are deliberately invisible: they only translate touch
+  // input and never draw borders, dots, previews, or center indicators.
+  if (!enabled || config.mode === "halves" || typeof document === "undefined") return null;
+  const pad = (side: "left" | "right", zone: "top" | "bottom" | "floating" | "half") => {
     const sideEnabled = config[`${side}Enabled` as const];
-    const selectedCorner = active[`${side}Active` as const]
-      ? active[`${side}Corner` as const]
-      : visible[`${side}Corner` as const];
-    const cornerAvailable = !config.fourPads ? corner === "bottom" : true;
-    const shown = sideEnabled && cornerAvailable && (
-      previewing || (visible[`${side}Active` as const] && selectedCorner === corner)
+    const sideActive = active[`${side}Active` as const];
+    const selectedZone = sideActive ? active[`${side}Zone` as const] : visible[`${side}Zone` as const];
+    const selectedX = sideActive ? active[`${side}X` as const] : visible[`${side}X` as const];
+    const selectedY = sideActive ? active[`${side}Y` as const] : visible[`${side}Y` as const];
+    const available = config.mode === "corners"
+      ? zone === "top" || zone === "bottom"
+      : config.mode === "floating"
+        ? zone === "floating"
+        : zone === "bottom";
+    const shown = sideEnabled && available && (
+      previewing || (visible[`${side}Active` as const] && selectedZone === zone)
     );
     const dotAlpha = config.backgroundOpacity / 100;
+    const size = config[`${side}Size` as const];
+    const position = zone === "floating"
+        ? {
+            left: `${(previewing ? (side === "left" ? 0.25 : 0.75) : selectedX) * 100}%`,
+            top: `${(previewing ? 0.5 : selectedY) * 100}%`,
+            height: `${size}vh`,
+            aspectRatio: "1 / 1",
+            transform: "translate(-50%, -50%)",
+          }
+        : {
+            [zone]: 0,
+            [side]: 0,
+            height: `${size}vh`,
+            aspectRatio: "1 / 1",
+          };
     return (
       <div
-        key={`${side}-${corner}`}
+        key={`${side}-${zone}`}
         aria-hidden="true"
         style={{
           position: "absolute",
-          [corner]: 0,
-          [side]: 0,
-          height: `${config[`${side}Size` as const]}vh`,
-          aspectRatio: "1 / 1",
+          ...position,
           boxSizing: "border-box",
           border: `1px solid rgba(255,255,255,${config.borderOpacity / 100})`,
           borderRadius: "12px",
@@ -107,8 +149,10 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
     <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 2147483647 }}>
       {pad("left", "top")}
       {pad("left", "bottom")}
+      {pad("left", "floating")}
       {pad("right", "top")}
       {pad("right", "bottom")}
+      {pad("right", "floating")}
     </div>,
     document.body,
   );
