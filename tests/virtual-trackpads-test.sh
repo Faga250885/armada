@@ -93,4 +93,7 @@ grep -Fq 'fcntl.ioctl(fd, EVIOCGRAB, 1)' "$ROOT/system_files/usr/libexec/armada/
 grep -Fq 'Touchpad:{side.title()}Pad:Motion' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'Touchpad:{side.title()}Pad:Button:Press' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 ! grep -Fq 'Touchpad:{side.title()}Pad:Touch:' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+grep -Fq '.write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/inputplumber/patches/0005-add-dbus-touch-events.patch"
+! grep -Fq 'blocking_write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/inputplumber/patches/0005-add-dbus-touch-events.patch"
+grep -Fq 'className="armada-trackpads-tab"' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
 grep -Fq 'systemctl enable armada-virtual-trackpads.service' "$ROOT/build_files/40-vendor-system-files.sh"

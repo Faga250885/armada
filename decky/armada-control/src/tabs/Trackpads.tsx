@@ -82,7 +82,7 @@ export function Trackpads({ config, setConfig }: {
   const visualDisabled = controlsDisabled;
   const centerDotDisabled = visualDisabled || pads.mode === "floating";
   return (
-    <>
+    <div className="armada-trackpads-tab">
       <div className="armada-subheader">{t("trackpads.title")}</div>
         <ToggleRow
           label={t("trackpads.master")}
@@ -266,6 +266,6 @@ export function Trackpads({ config, setConfig }: {
         />
         <div className="armada-trackpads-note">{t("trackpads.touchscreenNotice")}</div>
         <div className="armada-trackpads-note">{t("trackpads.deckTargetNotice")}</div>
-    </>
+    </div>
   );
 }

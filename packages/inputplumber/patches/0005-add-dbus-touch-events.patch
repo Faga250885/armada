@@ -6,8 +6,8 @@ system helpers can drive Steam Deck touchpad targets from a touchscreen.
 The existing SendEvent authorization is intentionally reused.
 ---
  bindings/dbus-xml/org.shadowblip.Input.CompositeDevice.xml |  8 ++++
- src/dbus/interface/composite_device.rs                     | 43 +++++++++++++++++++++
- 2 files changed, 51 insertions(+)
+ src/dbus/interface/composite_device.rs                     | 44 ++++++++++++++++++++++
+ 2 files changed, 52 insertions(+)
 
 diff --git a/bindings/dbus-xml/org.shadowblip.Input.CompositeDevice.xml b/bindings/dbus-xml/org.shadowblip.Input.CompositeDevice.xml
 index 051d09e..3850655 100644
@@ -32,7 +32,7 @@ diff --git a/src/dbus/interface/composite_device.rs b/src/dbus/interface/composi
 index e3db7ac..7947de9 100644
 --- a/src/dbus/interface/composite_device.rs
 +++ b/src/dbus/interface/composite_device.rs
-@@ -287,6 +287,49 @@ impl CompositeDeviceInterface {
+@@ -287,6 +287,50 @@ impl CompositeDeviceInterface {
          Ok(())
      }
  
@@ -74,7 +74,8 @@ index e3db7ac..7947de9 100644
 +            y: Some(y.clamp(0.0, 1.0)),
 +        };
 +        self.composite_device
-+            .blocking_write_send_event(NativeEvent::new(cap, value))
++            .write_send_event(NativeEvent::new(cap, value))
++            .await
 +            .map_err(|e| fdo::Error::Failed(e.to_string()))?;
 +        Ok(())
 +    }

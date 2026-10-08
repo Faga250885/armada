@@ -1,4 +1,4 @@
-import { gamepadSliderClasses } from "@decky/ui";
+import { gamepadDialogClasses, gamepadSliderClasses, quickAccessMenuClasses } from "@decky/ui";
 
 export const styles = `
       .armada-control-tabs {
@@ -56,6 +56,33 @@ export const styles = `
         min-width: 0;
         max-width: 100%;
         box-sizing: border-box;
+      }
+      .armada-control-tabs .armada-trackpads-tab {
+        width: calc(100% - 20px);
+        max-width: calc(100% - 20px);
+        min-width: 0;
+        margin: 0 10px;
+        overflow-x: hidden;
+        box-sizing: border-box;
+      }
+      .armada-control-tabs .armada-trackpads-tab > *,
+      .armada-control-tabs .armada-trackpads-tab > * > *,
+      .armada-control-tabs .armada-trackpads-tab > * > * > * {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      .armada-control-tabs .armada-trackpads-tab [class*="PanelSectionRow"],
+      .armada-control-tabs .armada-trackpads-tab [class*="Field"],
+      .armada-control-tabs .armada-trackpads-tab .${quickAccessMenuClasses.PanelSectionRow},
+      .armada-control-tabs .armada-trackpads-tab .${gamepadDialogClasses.Field} {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        overflow-wrap: anywhere;
+        box-sizing: border-box !important;
       }
       .armada-control-tabs .armada-slider-field {
         width: 100%;
