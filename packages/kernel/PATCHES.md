@@ -650,6 +650,15 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0619-drm-msm-map-submitqueue-priority-onto-high-low.patch`
   source: armada
   upstream: local
+- `patches/0620-drm-msm-a6xx-hfi-irq-clears-only-the-cm3-fault.patch`
+  source: https://github.com/kettlelinux/kettlelinux/blob/d379ae1d0efeb8dd282647a1598efd719c6ecd4d/kernel/patches/40-kettle/1350-drm-msm-a6xx-hfi-irq-clears-only-the-cm3-fault.patch
+  upstream: unknown
+- `patches/0621-drm-msm-a6xx-bound-the-gmu-wait-for-a-fault-devcoredump.patch`
+  source: https://github.com/kettlelinux/kettlelinux/blob/d379ae1d0efeb8dd282647a1598efd719c6ecd4d/kernel/patches/40-kettle/1351-drm-msm-a6xx-bound-the-gmu-wait-for-a-fault-devcoredump.patch
+  upstream: unknown
+- `patches/0622-drm-msm-a6xx-mask-the-hfi-interrupt-before-booting-the-gmu.patch`
+  source: armada
+  upstream: local
 - `dts/qcs8550-ayaneo-pocketace.dts`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8550/linux/dts/qcom/qcs8550-ayaneo-pocketace.dts
 - `dts/qcs8550-ayaneo-pocket-common.dtsi`
