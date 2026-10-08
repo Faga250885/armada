@@ -142,13 +142,6 @@ export function Trackpads({ config, setConfig }: {
           disabled={controlsDisabled}
           onChange={(size) => update({ leftSize: size, rightSize: size })}
         />
-        <ToggleRow
-          label={t("trackpads.fixedBottom")}
-          description={t("trackpads.fixedBottomDescription")}
-          value={pads.fixedBottom}
-          disabled={controlsDisabled || pads.mode !== "simple"}
-          onChange={(fixedBottom) => update({ fixedBottom }, true)}
-        />
         <SliderEdit
           label={t("trackpads.edgeGap")}
           value={pads.edgeGap}

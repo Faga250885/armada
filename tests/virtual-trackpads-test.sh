@@ -29,6 +29,7 @@ assert sanitize_config({"blockTouchscreen": True})["blockTouchscreen"] is True
 assert sanitize_config({"enabled": True, "blockTouchscreen": True})["enabled"] is False
 assert sanitize_config({"tapToClick": False})["tapToClick"] is True
 assert set(config) == set(DEFAULT_CONFIG)
+assert "fixedBottom" not in DEFAULT_CONFIG
 
 assert rotate_touch(0.25, 0.75, "left") == (0.75, 0.75)
 assert rotate_touch(0.25, 0.75, "right") == (0.25, 0.25)
@@ -99,10 +100,15 @@ grep -Fq 'systemctl enable armada-virtual-trackpads.service' "$ROOT/build_files/
 grep -Fq 'ARMADA_TOUCHSCREEN_ORIENTATION=right' "$ROOT/system_files/usr/lib/armada/devices/retroid-pocket-6.conf"
 grep -Fq '"ARMADA_TOUCHSCREEN_ORIENTATION"' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'ARMADA_TOUCHSCREEN_ORIENTATION' "$ROOT/system_files/usr/libexec/armada/device-env"
-grep -Fq 'STEAM_OVERLAY' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+grep -Fq 'ARMADA_VIRTUAL_TRACKPADS_OVERLAY' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'XFixesSetWindowShapeRegion' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
-grep -Fq 'STEAM_OVERLAY' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+! grep -Fq 'b"STEAM_OVERLAY"' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'preview_until' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'GAMESCOPE_WAYLAND_DISPLAY' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+grep -Fq 'self.ip.press(side, True)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+grep -Fq 'self.press_releases[side] = {' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+grep -Fq 'pending["index"]' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+! grep -Fq 'fixedBottom' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
+grep -Fq 'ARMADA_OVERLAY_PROP' "$ROOT/packages/gamescope/patches/0028-steamcompmgr-armada-virtual-trackpad-overlay.patch"
 ! grep -Fq '<VirtualTrackpadOverlay' "$ROOT/decky/armada-control/src/Content.tsx"
 grep -Fq 'systemctl --global enable armada-virtual-trackpads-overlay.service' "$ROOT/build_files/40-vendor-system-files.sh"

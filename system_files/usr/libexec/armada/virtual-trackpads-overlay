@@ -113,43 +113,32 @@ class X11Overlay:
         self.xfixes.XFixesDestroyRegion.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
         self.display = self.x11.XOpenDisplay(None)
         self.window = 0
-        self.claimed = False
 
     def attach(self, surface, width, height):
         self.window = int(GdkX11.X11Surface.get_xid(surface))
         if not self.display or not self.window:
             return
-        # One pixel narrower than the root makes Gamescope classify this as a
-        # non-interactive notification plane instead of Steam's QAM overlay.
-        self.x11.XMoveResizeWindow(self.display, self.window, 0, 0, width - 1, height)
+        self.x11.XMoveResizeWindow(self.display, self.window, 0, 0, width, height)
+        atom = self.x11.XInternAtom(
+            self.display, b"ARMADA_VIRTUAL_TRACKPADS_OVERLAY", False
+        )
+        value = ctypes.c_ulong(1)
+        self.x11.XChangeProperty(
+            self.display,
+            self.window,
+            atom,
+            self.XA_CARDINAL,
+            32,
+            self.PROP_MODE_REPLACE,
+            ctypes.cast(ctypes.pointer(value), ctypes.POINTER(ctypes.c_ubyte)),
+            1,
+        )
         region = self.xfixes.XFixesCreateRegion(self.display, None, 0)
         self.xfixes.XFixesSetWindowShapeRegion(
             self.display, self.window, self.SHAPE_INPUT, 0, 0, region
         )
         self.xfixes.XFixesDestroyRegion(self.display, region)
         self.x11.XFlush(self.display)
-
-    def set_claimed(self, claimed):
-        if not self.display or not self.window or claimed == self.claimed:
-            return
-        atom = self.x11.XInternAtom(self.display, b"STEAM_OVERLAY", False)
-        if claimed:
-            value = ctypes.c_ulong(1)
-            self.x11.XChangeProperty(
-                self.display,
-                self.window,
-                atom,
-                self.XA_CARDINAL,
-                32,
-                self.PROP_MODE_REPLACE,
-                ctypes.cast(ctypes.pointer(value), ctypes.POINTER(ctypes.c_ubyte)),
-                1,
-            )
-        else:
-            self.x11.XDeleteProperty(self.display, self.window, atom)
-        self.x11.XFlush(self.display)
-        self.claimed = claimed
-
 
 class TrackpadOverlay(Gtk.Application):
     def __init__(self):
@@ -166,6 +155,7 @@ class TrackpadOverlay(Gtk.Application):
         self.last_frame = time.monotonic()
         self.config_stamp = None
         self.preview_until = 0.0
+        self.had_visual = False
 
     def do_activate(self):
         display = Gdk.Display.get_default()
@@ -188,9 +178,9 @@ class TrackpadOverlay(Gtk.Application):
         self.window.set_decorated(False)
         self.window.set_focusable(False)
         self.window.set_can_focus(False)
-        self.window.set_default_size(max(1, self.width - 1), self.height)
+        self.window.set_default_size(self.width, self.height)
         self.area = Gtk.DrawingArea()
-        self.area.set_content_width(max(1, self.width - 1))
+        self.area.set_content_width(self.width)
         self.area.set_content_height(self.height)
         self.area.set_draw_func(self.draw)
         self.window.set_child(self.area)
@@ -234,9 +224,12 @@ class TrackpadOverlay(Gtk.Application):
                 self.fade[side] = max(target, self.fade[side] - speed)
             anything_visible |= self.fade[side] > 0.001
         center_visible = enabled and bool(self.config.get("centerDotEnabled")) and self.config.get("mode") != "floating"
-        self.xoverlay.set_claimed(anything_visible or center_visible or previewing)
-        if self.area is not None and (anything_visible or center_visible):
+        has_visual = anything_visible or center_visible or previewing
+        # Queue one final transparent frame after the fade reaches zero so an
+        # old pad image cannot remain in Gamescope's dedicated overlay plane.
+        if self.area is not None and (has_visual or self.had_visual):
             self.area.queue_draw()
+        self.had_visual = has_visual
         return GLib.SOURCE_CONTINUE
 
     def pad_rect(self, side, zone):
@@ -256,9 +249,7 @@ class TrackpadOverlay(Gtk.Application):
             return ("top", "bottom")
         if mode == "floating":
             return ("floating",)
-        if self.config.get("fixedBottom", True):
-            return ("bottom",)
-        return ("top", "bottom")
+        return ("bottom",)
 
     def draw_dots(self, context, rect, side, alpha):
         x, y, width, height = rect

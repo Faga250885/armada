@@ -10,7 +10,6 @@ DEFAULT = {
     "mode": "simple",
     "tapToClick": True,
     "limitToBounds": False,
-    "fixedBottom": True,
     "leftSize": 35,
     "rightSize": 35,
     "edgeGap": 0,

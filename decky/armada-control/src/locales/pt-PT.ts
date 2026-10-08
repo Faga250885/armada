@@ -242,8 +242,6 @@ export const ptPT = {
   "trackpads.rightSize": "Tamanho direito (%)",
   "trackpads.zones": "Zonas",
   "trackpads.sharedSize": "Tamanho dos dois trackpads (%)",
-  "trackpads.fixedBottom": "Fixos na parte inferior",
-  "trackpads.fixedBottomDescription": "Quando desativado, o primeiro toque pode escolher o canto superior ou inferior de cada lado.",
   "trackpads.edgeGap": "Distância do canto (px)",
   "trackpads.feedback": "Resposta",
   "trackpads.tapToClick": "Toque para clicar",

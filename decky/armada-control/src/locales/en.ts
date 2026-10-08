@@ -240,8 +240,6 @@ export const en = {
   "trackpads.rightSize": "Right Size (%)",
   "trackpads.zones": "Zones",
   "trackpads.sharedSize": "Both Trackpads Size (%)",
-  "trackpads.fixedBottom": "Keep at the Bottom",
-  "trackpads.fixedBottomDescription": "When disabled, the first touch can select the top or bottom corner on each side.",
   "trackpads.edgeGap": "Corner Offset (px)",
   "trackpads.feedback": "Feedback",
   "trackpads.tapToClick": "Tap to Click",

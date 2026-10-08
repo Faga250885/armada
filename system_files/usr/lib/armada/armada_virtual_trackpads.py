@@ -6,7 +6,6 @@ DEFAULT_CONFIG = {
     "mode": "simple",
     "tapToClick": True,
     "limitToBounds": False,
-    "fixedBottom": True,
     "leftSize": 35,
     "rightSize": 35,
     "edgeGap": 0,
@@ -40,7 +39,7 @@ NUMBER_RANGES = {
 
 BOOLEAN_KEYS = (
     "enabled", "blockTouchscreen", "leftEnabled", "rightEnabled",
-    "tapToClick", "limitToBounds", "fixedBottom", "centerDotEnabled",
+    "tapToClick", "limitToBounds", "centerDotEnabled",
 )
 COLOR_KEYS = ("borderColor", "dotColor", "centerDotColor")
 
@@ -135,7 +134,7 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
                     return side, "half", clamp(local_x), clamp(y)
                 return side, "floating", 0.5, 0.5
             continue
-        corners = ("top", "bottom") if mode == "corners" or not config["fixedBottom"] else ("bottom",)
+        corners = ("top", "bottom") if mode == "corners" else ("bottom",)
         for corner in corners:
             top = gap_y if corner == "top" else 1.0 - gap_y - height
             if left <= x <= left + width and top <= y <= top + height:

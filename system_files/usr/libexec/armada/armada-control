@@ -530,7 +530,7 @@ def action_set_virtual_trackpads(request):
     required = set(VIRTUAL_TRACKPADS_DEFAULTS)
     if set(requested) != required:
         raise ValueError("incomplete virtual trackpad configuration")
-    for key in ("enabled", "blockTouchscreen", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds", "fixedBottom", "centerDotEnabled"):
+    for key in ("enabled", "blockTouchscreen", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds", "centerDotEnabled"):
         if not isinstance(requested[key], bool):
             raise ValueError(f"invalid {key}")
     requested = dict(requested)

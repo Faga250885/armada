@@ -242,8 +242,6 @@ export const zhCN = {
   "trackpads.rightSize": "右侧大小 (%)",
   "trackpads.zones": "区域",
   "trackpads.sharedSize": "两个触控板的大小 (%)",
-  "trackpads.fixedBottom": "固定在底部",
-  "trackpads.fixedBottomDescription": "关闭后，首次触摸可选择每侧的顶部或底部角落。",
   "trackpads.edgeGap": "距角落距离 (px)",
   "trackpads.feedback": "反馈",
   "trackpads.tapToClick": "轻触点击",

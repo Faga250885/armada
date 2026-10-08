@@ -24,8 +24,6 @@ export const es: Record<TranslationKey, string> = {
   "trackpads.rightSize": "Tamaño derecho (%)",
   "trackpads.zones": "Zonas",
   "trackpads.sharedSize": "Tamaño de ambos trackpads (%)",
-  "trackpads.fixedBottom": "Fijos en la parte inferior",
-  "trackpads.fixedBottomDescription": "Al desactivarlo, el primer toque puede elegir la esquina superior o inferior de cada lado.",
   "trackpads.edgeGap": "Separación de la esquina (px)",
   "trackpads.feedback": "Respuesta",
   "trackpads.tapToClick": "Toque para clic",

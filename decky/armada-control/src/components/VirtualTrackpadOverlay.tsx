@@ -195,7 +195,7 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
       ? zone === "top" || zone === "bottom"
       : config.mode === "floating"
         ? zone === "floating"
-        : zone === "bottom" || (!config.fixedBottom && zone === "top");
+        : zone === "bottom";
     const shown = sideEnabled && available && (
       previewing || (visible[`${side}Active` as const] && selectedZone === zone)
     );
@@ -249,7 +249,7 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
   const centerDot = (side: "left" | "right", zone: "top" | "bottom") => {
     const sideEnabled = config[`${side}Enabled` as const];
     const available = config.mode === "corners"
-      || (config.mode === "simple" && (zone === "bottom" || !config.fixedBottom));
+      || (config.mode === "simple" && zone === "bottom");
     if (!config.centerDotEnabled || !sideEnabled || !available) return null;
     const size = config[`${side}Size` as const];
     return (

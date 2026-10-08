@@ -232,6 +232,11 @@ class VirtualTrackpads:
         self.suspended_slots.clear()
         self.slots.clear()
         self.dirty_slots.clear()
+        for side in list(self.press_releases):
+            try:
+                self.release_press(side)
+            except Exception:
+                pass
         for side in ("left", "right"):
             try:
                 self.ip.press(side, False)
@@ -270,17 +275,37 @@ class VirtualTrackpads:
         minimum, maximum = bounds
         return clamp((value - minimum) / (maximum - minimum))
 
-    def haptic(self, multiplier=1.0):
-        strength = self.config["hapticStrength"] / 100.0 * clamp(multiplier)
+    def haptic(self, multiplier=1.0, duration_scale=1.0):
+        configured = self.config["hapticStrength"] / 100.0
+        strength = configured * clamp(multiplier)
         now = time.monotonic()
-        if strength <= 0 or now - self.last_haptic < 0.045:
+        # Some handheld motors quantize low amplitudes heavily.  Vary both
+        # amplitude and pulse length so the full 0-100 setting remains useful.
+        minimum_interval = 0.025 + (1.0 - configured) * 0.035
+        if strength <= 0 or now - self.last_haptic < minimum_interval:
             return
         try:
             self.ip.rumble(strength)
-            self.rumble_stop_at = now + 0.025
+            duration = (0.006 + configured * 0.026) * clamp(duration_scale, 0.25, 1.0)
+            self.rumble_stop_at = now + duration
             self.last_haptic = now
         except Exception:
             pass
+
+    def release_press(self, side):
+        pending = self.press_releases.pop(side, None)
+        if pending is None:
+            return
+        try:
+            self.ip.press(side, False)
+        finally:
+            self.ip.touch(
+                side,
+                pending["index"],
+                False,
+                pending["x"],
+                pending["y"],
+            )
 
     def update_slot(self, slot):
         point = self.slots.get(slot)
@@ -299,6 +324,10 @@ class VirtualTrackpads:
             side, zone, local_x, local_y = match
             if any(value[0] == side for value in self.pad_slots.values()):
                 return
+            # Finish a previous tap pulse before starting another contact on
+            # the same physical pad.
+            if side in self.press_releases:
+                self.release_press(side)
             self.pad_slots[slot] = (side, zone, x, y)
             self.inertia_haptics.pop(side, None)
             self.last_zones[side] = zone
@@ -382,13 +411,29 @@ class VirtualTrackpads:
                 origin = point.get("origin", (x, y))
                 elapsed = time.monotonic() - point.get("started", 0.0)
                 travel = abs(x - origin[0]) + abs(y - origin[1])
-                if not was_suspended and not point.get("cancelTap") and elapsed <= 0.30 and travel <= 0.08:
+                tapped = (
+                    not was_suspended
+                    and not point.get("cancelTap")
+                    and elapsed <= 0.30
+                    and travel <= 0.08
+                )
+                click_started = False
+                if tapped:
                     try:
                         self.ip.press(side, True)
-                        self.press_releases[side] = time.monotonic() + 0.06
+                        # Steam only accepts a pad click while that pad still
+                        # reports touch.  Release both signals together after
+                        # the click pulse instead of ending touch immediately.
+                        self.press_releases[side] = {
+                            "deadline": time.monotonic() + 0.075,
+                            "index": slot % 256,
+                            "x": x,
+                            "y": y,
+                        }
+                        click_started = True
                     except Exception:
                         pass
-                if not was_suspended:
+                if not was_suspended and not click_started:
                     self.ip.touch(side, slot % 256, False, x, y)
                 velocity_x, velocity_y = point.get("velocity", (0.0, 0.0))
                 speed = (velocity_x * velocity_x + velocity_y * velocity_y) ** 0.5
@@ -397,20 +442,18 @@ class VirtualTrackpads:
                     amount = clamp(speed / 4.0, 0.12, 1.0)
                     self.inertia_haptics[side] = {
                         "amount": amount,
-                        "next": time.monotonic() + 0.045,
+                        "next": time.monotonic() + 0.035,
+                        "deadline": time.monotonic() + 0.58,
                     }
             finally:
                 self.write_state()
 
     def release_presses(self):
         now = time.monotonic()
-        for side, deadline in list(self.press_releases.items()):
-            if now < deadline:
+        for side, pending in list(self.press_releases.items()):
+            if now < pending["deadline"]:
                 continue
-            try:
-                self.ip.press(side, False)
-            finally:
-                self.press_releases.pop(side, None)
+            self.release_press(side)
 
     def pulse_inertia_haptics(self):
         now = time.monotonic()
@@ -418,13 +461,13 @@ class VirtualTrackpads:
             if now < inertia["next"]:
                 continue
             amount = inertia["amount"]
-            self.haptic(amount)
-            amount *= 0.84
-            if amount < 0.06:
+            if now >= inertia["deadline"] or amount < 0.08:
                 self.inertia_haptics.pop(side, None)
                 continue
+            self.haptic(amount, duration_scale=0.35 + amount * 0.65)
+            amount *= 0.70
             inertia["amount"] = amount
-            inertia["next"] = now + 0.045 + (1.0 - amount) * 0.055
+            inertia["next"] = now + 0.035 + (1.0 - amount) * 0.045
 
     def process(self, data):
         for offset in range(0, len(data) - INPUT_EVENT.size + 1, INPUT_EVENT.size):
@@ -462,7 +505,10 @@ class VirtualTrackpads:
             if self.rumble_stop_at:
                 timeout = max(0.0, min(timeout, self.rumble_stop_at - time.monotonic()))
             if self.press_releases:
-                timeout = max(0.0, min(timeout, min(self.press_releases.values()) - time.monotonic()))
+                timeout = max(0.0, min(
+                    timeout,
+                    min(item["deadline"] for item in self.press_releases.values()) - time.monotonic(),
+                ))
             if self.inertia_haptics:
                 timeout = max(0.0, min(timeout, min(item["next"] for item in self.inertia_haptics.values()) - time.monotonic()))
             readable, _, _ = select.select([self.fd] if self.fd is not None else [], [], [], timeout)
