@@ -14,6 +14,7 @@ import cairo
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 gi.require_version("GdkX11", "4.0")
 from gi.repository import Gdk, GdkX11, GLib, Gtk
 
@@ -42,11 +43,55 @@ def device_env():
     return result
 
 
+def xwayland_authorities():
+    """Return Xwayland -auth files indexed by their display name."""
+    result = {}
+    for cmdline_path in Path("/proc").glob("[0-9]*/cmdline"):
+        try:
+            arguments = [
+                item.decode(errors="ignore")
+                for item in cmdline_path.read_bytes().split(b"\0")
+                if item
+            ]
+        except (OSError, PermissionError):
+            continue
+        if not arguments or "xwayland" not in Path(arguments[0]).name.lower():
+            continue
+        display = next((item for item in arguments[1:] if item.startswith(":")), None)
+        try:
+            auth_index = arguments.index("-auth") + 1
+            authority = arguments[auth_index]
+        except (ValueError, IndexError):
+            authority = None
+        if display and authority:
+            result.setdefault(display, authority)
+    return result
+
+
+def can_open_x11(display, authority):
+    """Test the exact X11 credentials before GTK caches its default display."""
+    os.environ["DISPLAY"] = display
+    if authority:
+        os.environ["XAUTHORITY"] = authority
+    else:
+        os.environ.pop("XAUTHORITY", None)
+    x11 = ctypes.CDLL("libX11.so.6")
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    connection = x11.XOpenDisplay(display.encode())
+    if not connection:
+        return False
+    x11.XCloseDisplay(connection)
+    return True
+
+
 def import_gamescope_environment(timeout=30.0):
-    """Import the Xwayland connection inherited by Steam inside Gamescope."""
+    """Import and validate Steam's Xwayland connection inside Gamescope."""
     deadline = time.monotonic() + timeout
     uid = os.getuid()
     while time.monotonic() < deadline:
+        candidates = []
         for environ_path in Path("/proc").glob("[0-9]*/environ"):
             try:
                 if environ_path.stat().st_uid != uid:
@@ -61,12 +106,32 @@ def import_gamescope_environment(timeout=30.0):
                     environment[key.decode(errors="ignore")] = data.decode(errors="ignore")
             if not environment.get("DISPLAY") or not environment.get("GAMESCOPE_WAYLAND_DISPLAY"):
                 continue
-            os.environ["DISPLAY"] = environment["DISPLAY"]
-            if environment.get("XAUTHORITY"):
-                os.environ["XAUTHORITY"] = environment["XAUTHORITY"]
-            return environment["DISPLAY"]
+            candidates.append(environment)
+        authorities = xwayland_authorities()
+        # Prefer a process that already carries XAUTHORITY, then try the
+        # authoritative -auth argument of the matching Xwayland server.
+        candidates.sort(key=lambda item: bool(item.get("XAUTHORITY")), reverse=True)
+        attempted = set()
+        for environment in candidates:
+            display = environment["DISPLAY"]
+            auth_choices = (
+                environment.get("XAUTHORITY"),
+                authorities.get(display),
+                None,
+            )
+            for authority in auth_choices:
+                key = (display, authority)
+                if key in attempted:
+                    continue
+                attempted.add(key)
+                if not can_open_x11(display, authority):
+                    continue
+                os.environ["GAMESCOPE_WAYLAND_DISPLAY"] = environment[
+                    "GAMESCOPE_WAYLAND_DISPLAY"
+                ]
+                return display
         time.sleep(0.25)
-    raise RuntimeError("Gamescope Xwayland display not found")
+    raise RuntimeError("no usable Gamescope Xwayland display or authorization found")
 
 
 def clamp(value, minimum=0.0, maximum=1.0):
@@ -347,6 +412,13 @@ class TrackpadOverlay(Gtk.Application):
 
 
 if __name__ == "__main__":
-    display = import_gamescope_environment()
-    print(f"virtual-trackpads-overlay: using Gamescope display {display}", flush=True)
+    display_name = import_gamescope_environment()
+    display = Gdk.Display.open(display_name)
+    if display is None:
+        raise RuntimeError(f"GDK could not open validated display {display_name}")
+    Gdk.DisplayManager.get().set_default_display(display)
+    print(
+        f"virtual-trackpads-overlay: connected to Gamescope display {display_name}",
+        flush=True,
+    )
     TrackpadOverlay().run(None)
