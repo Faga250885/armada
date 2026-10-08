@@ -237,8 +237,14 @@ index 373d697..5384e23 100644
  	ctx->atoms.mangoappMsgTypeAtom = XInternAtom(ctx->dpy, MANGOAPP_MSG_TYPE_PROP, false);
  	ctx->atoms.opacityAtom = XInternAtom(ctx->dpy, OPACITY_PROP, false);
  	ctx->atoms.gamesRunningAtom = XInternAtom(ctx->dpy, GAMES_RUNNING_PROP, false);
-@@ -10692,0 +10748 @@ steamcompmgr_main(int argc, char **argv)
+@@ -10688,6 +10744,7 @@ steamcompmgr_main(int argc, char **argv)
+ 			// HACK: Disable tearing if we have an overlay to avoid stutters right now
+ 			// TODO: Fix properly.
+ 			const bool bHasOverlay = ( pPaintFocus->overlayWindow && pPaintFocus->overlayWindow->opacity ) ||
+ 									( pPaintFocus->externalOverlayWindow && pPaintFocus->externalOverlayWindow->opacity ) ||
 +									( pPaintFocus->armadaOverlayWindow && pPaintFocus->armadaOverlayWindow->opacity ) ||
+ 									( pPaintFocus->overrideWindow  && pPaintFocus->focusWindow && !pPaintFocus->focusWindow->isSteamStreamingClient && pPaintFocus->overrideWindow->opacity );
+ 
 diff --git a/src/steamcompmgr_shared.hpp b/src/steamcompmgr_shared.hpp
 index c344d10..3ce6041 100644
 --- a/src/steamcompmgr_shared.hpp
