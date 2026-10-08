@@ -4,6 +4,7 @@
 import ctypes
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -20,6 +21,33 @@ STATE_PATH = Path("/run/armada/virtual-trackpads-state.json")
 HOLD_SECONDS = 1.0
 FADE_SECONDS = 0.28
 FRAME_MS = 16
+
+
+def import_gamescope_environment(timeout=30.0):
+    """Import the Xwayland connection inherited by Steam inside Gamescope."""
+    deadline = time.monotonic() + timeout
+    uid = os.getuid()
+    while time.monotonic() < deadline:
+        for environ_path in Path("/proc").glob("[0-9]*/environ"):
+            try:
+                if environ_path.stat().st_uid != uid:
+                    continue
+                values = environ_path.read_bytes().split(b"\0")
+            except (OSError, PermissionError):
+                continue
+            environment = {}
+            for value in values:
+                key, separator, data = value.partition(b"=")
+                if separator:
+                    environment[key.decode(errors="ignore")] = data.decode(errors="ignore")
+            if not environment.get("DISPLAY") or not environment.get("GAMESCOPE_WAYLAND_DISPLAY"):
+                continue
+            os.environ["DISPLAY"] = environment["DISPLAY"]
+            if environment.get("XAUTHORITY"):
+                os.environ["XAUTHORITY"] = environment["XAUTHORITY"]
+            return environment["DISPLAY"]
+        time.sleep(0.25)
+    raise RuntimeError("Gamescope Xwayland display not found")
 
 
 def clamp(value, minimum=0.0, maximum=1.0):
@@ -306,4 +334,6 @@ class TrackpadOverlay(Gtk.Application):
 
 
 if __name__ == "__main__":
+    display = import_gamescope_environment()
+    print(f"virtual-trackpads-overlay: using Gamescope display {display}", flush=True)
     TrackpadOverlay().run(None)
