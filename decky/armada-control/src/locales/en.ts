@@ -240,6 +240,8 @@ export const en = {
   "trackpads.rightSize": "Right Size (%)",
   "trackpads.zones": "Zones",
   "trackpads.sharedSize": "Both Trackpads Size (%)",
+  "trackpads.deckLikeSize": "Deck-like Size (32.5 mm)",
+  "trackpads.deckLikeSizeDescription": "Uses the screen's physical dimensions to match the approximate size of a Steam Deck trackpad.",
   "trackpads.edgeGap": "Corner Offset (px)",
   "trackpads.feedback": "Feedback",
   "trackpads.tapToClick": "Tap to Click",

@@ -242,6 +242,8 @@ export const ptBR = {
   "trackpads.rightSize": "Tamanho direito (%)",
   "trackpads.zones": "Zonas",
   "trackpads.sharedSize": "Tamanho dos dois trackpads (%)",
+  "trackpads.deckLikeSize": "Tamanho Deck-like (32,5 mm)",
+  "trackpads.deckLikeSizeDescription": "Usa as dimensões físicas da tela para aproximar o tamanho de um trackpad do Steam Deck.",
   "trackpads.edgeGap": "Distância do canto (px)",
   "trackpads.feedback": "Resposta",
   "trackpads.tapToClick": "Toque para clicar",

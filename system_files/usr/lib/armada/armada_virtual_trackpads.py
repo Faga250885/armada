@@ -1,3 +1,8 @@
+from pathlib import Path
+
+
+DECK_TRACKPAD_SIZE_MM = 32.5
+
 DEFAULT_CONFIG = {
     "enabled": False,
     "blockTouchscreen": False,
@@ -6,6 +11,7 @@ DEFAULT_CONFIG = {
     "mode": "simple",
     "tapToClick": True,
     "limitToBounds": False,
+    "deckLikeSize": True,
     "leftSize": 35,
     "rightSize": 35,
     "edgeGap": 0,
@@ -39,13 +45,65 @@ NUMBER_RANGES = {
 
 BOOLEAN_KEYS = (
     "enabled", "blockTouchscreen", "leftEnabled", "rightEnabled",
-    "tapToClick", "limitToBounds", "centerDotEnabled",
+    "tapToClick", "limitToBounds", "deckLikeSize", "centerDotEnabled",
 )
 COLOR_KEYS = ("borderColor", "dotColor", "centerDotColor")
 
 
 def clamp(value, minimum=0.0, maximum=1.0):
     return max(minimum, min(maximum, value))
+
+
+def physical_panel_height_mm(device_values=None, drm_root=Path("/sys/class/drm")):
+    """Return the visible landscape panel height, preferring device metadata."""
+    if isinstance(device_values, dict):
+        try:
+            explicit = float(device_values.get("ARMADA_PANEL_PHYSICAL_HEIGHT_MM", 0))
+        except (TypeError, ValueError):
+            explicit = 0.0
+        if explicit > 0:
+            return explicit
+
+    candidates = []
+    try:
+        paths = sorted(drm_root.glob("card*-*/edid"))
+    except OSError:
+        paths = []
+    for path in paths:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        if (
+            len(data) < 23
+            or data[:8] != b"\x00\xff\xff\xff\xff\xff\xff\x00"
+            or not data[21]
+            or not data[22]
+        ):
+            continue
+        # EDID stores the two physical axes in centimetres.  Game Mode is
+        # landscape on Armada handhelds, so its visible height is the shorter
+        # physical axis even when the native panel scanout is portrait.
+        height = min(data[21], data[22]) * 10.0
+        name = path.parent.name.lower()
+        priority = 0 if ("dsi" in name or "edp" in name) else 1
+        candidates.append((priority, height))
+    return min(candidates)[1] if candidates else None
+
+
+def apply_deck_like_size(config, device_values=None, drm_root=Path("/sys/class/drm")):
+    """Resolve a 32.5 mm square pad to a percentage of the physical screen."""
+    result = dict(config)
+    if not result.get("deckLikeSize"):
+        return result
+    height_mm = physical_panel_height_mm(device_values, drm_root)
+    if not height_mm:
+        return result
+    minimum, maximum = NUMBER_RANGES["leftSize"]
+    size = round(max(minimum, min(maximum, DECK_TRACKPAD_SIZE_MM / height_mm * 100.0)))
+    result["leftSize"] = size
+    result["rightSize"] = size
+    return result
 
 
 def valid_color(value):

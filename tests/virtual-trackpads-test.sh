@@ -3,7 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHONPATH="$ROOT/system_files/usr/lib/armada" python3 - <<'PYEOF'
-from armada_virtual_trackpads import DEFAULT_CONFIG, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_at, trackpad_coordinates
+import tempfile
+from pathlib import Path
+
+from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_at, trackpad_coordinates
 
 config = sanitize_config({
     "enabled": True,
@@ -30,6 +33,20 @@ assert sanitize_config({"enabled": True, "blockTouchscreen": True})["enabled"] i
 assert sanitize_config({"tapToClick": False})["tapToClick"] is True
 assert set(config) == set(DEFAULT_CONFIG)
 assert "fixedBottom" not in DEFAULT_CONFIG
+assert DEFAULT_CONFIG["deckLikeSize"] is True
+deck_like = apply_deck_like_size(config, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"})
+assert deck_like["leftSize"] == deck_like["rightSize"] == 47
+manual_size = apply_deck_like_size({**config, "deckLikeSize": False, "leftSize": 38, "rightSize": 38}, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"})
+assert manual_size["leftSize"] == manual_size["rightSize"] == 38
+with tempfile.TemporaryDirectory() as directory:
+    connector = Path(directory) / "card0-DSI-1"
+    connector.mkdir()
+    edid = bytearray(128)
+    edid[:8] = b"\x00\xff\xff\xff\xff\xff\xff\x00"
+    edid[21], edid[22] = 12, 7
+    (connector / "edid").write_bytes(edid)
+    detected = apply_deck_like_size(config, {}, Path(directory))
+    assert detected["leftSize"] == detected["rightSize"] == 46
 
 assert rotate_touch(0.25, 0.75, "left") == (0.75, 0.75)
 assert rotate_touch(0.25, 0.75, "right") == (0.25, 0.25)
@@ -98,6 +115,7 @@ grep -Fq '.write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/input
 grep -Fq 'className="armada-trackpads-tab"' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
 grep -Fq 'systemctl enable armada-virtual-trackpads.service' "$ROOT/build_files/40-vendor-system-files.sh"
 grep -Fq 'ARMADA_TOUCHSCREEN_ORIENTATION=right' "$ROOT/system_files/usr/lib/armada/devices/retroid-pocket-6.conf"
+grep -Fq 'ARMADA_PANEL_PHYSICAL_HEIGHT_MM=68.5' "$ROOT/system_files/usr/lib/armada/devices/retroid-pocket-6.conf"
 grep -Fq '"ARMADA_TOUCHSCREEN_ORIENTATION"' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'ARMADA_TOUCHSCREEN_ORIENTATION' "$ROOT/system_files/usr/libexec/armada/device-env"
 grep -Fq 'ARMADA_VIRTUAL_TRACKPADS_OVERLAY' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
@@ -109,6 +127,7 @@ grep -Fq 'self.ip.press(side, True)' "$ROOT/system_files/usr/libexec/armada/virt
 grep -Fq 'self.press_releases[side] = {' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'pending["index"]' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 ! grep -Fq 'fixedBottom' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
+grep -Fq 'pads.deckLikeSize' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
 grep -Fq 'ARMADA_OVERLAY_PROP' "$ROOT/packages/gamescope/patches/0028-steamcompmgr-armada-virtual-trackpad-overlay.patch"
 ! grep -Fq '<VirtualTrackpadOverlay' "$ROOT/decky/armada-control/src/Content.tsx"
 grep -Fq 'systemctl --global enable armada-virtual-trackpads-overlay.service' "$ROOT/build_files/40-vendor-system-files.sh"

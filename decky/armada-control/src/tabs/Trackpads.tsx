@@ -139,8 +139,15 @@ export function Trackpads({ config, setConfig }: {
           min={15}
           max={60}
           step={1}
-          disabled={controlsDisabled}
+          disabled={controlsDisabled || pads.deckLikeSize}
           onChange={(size) => update({ leftSize: size, rightSize: size })}
+        />
+        <ToggleRow
+          label={t("trackpads.deckLikeSize")}
+          description={t("trackpads.deckLikeSizeDescription")}
+          value={pads.deckLikeSize}
+          disabled={controlsDisabled}
+          onChange={(deckLikeSize) => update({ deckLikeSize }, true)}
         />
         <SliderEdit
           label={t("trackpads.edgeGap")}

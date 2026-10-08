@@ -15,7 +15,7 @@ from pathlib import Path
 from gi.repository import Gio, GLib
 
 sys.path.insert(0, "/usr/lib/armada")
-from armada_virtual_trackpads import DEFAULT_CONFIG, clamp, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_coordinates, trackpad_zone_at
+from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, clamp, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_coordinates, trackpad_zone_at
 
 
 CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
@@ -36,11 +36,14 @@ ABS_MT_TRACKING_ID = 0x39
 EVIOCGRAB = 0x40044590
 INPUT_EVENT = struct.Struct("@llHHi")
 
-def load_config(path=CONFIG_PATH):
+def load_config(path=CONFIG_PATH, device_values=None):
     try:
-        return sanitize_config(json.loads(path.read_text(encoding="utf-8")))
+        return apply_deck_like_size(
+            sanitize_config(json.loads(path.read_text(encoding="utf-8"))),
+            device_values,
+        )
     except (OSError, ValueError, TypeError):
-        return dict(DEFAULT_CONFIG)
+        return apply_deck_like_size(DEFAULT_CONFIG, device_values)
 
 
 def parse_device_env():
@@ -160,8 +163,9 @@ class InputPlumber:
 
 class VirtualTrackpads:
     def __init__(self):
-        self.config = load_config()
         device_env = parse_device_env()
+        self.device_env = device_env
+        self.config = load_config(device_values=device_env)
         # A digitizer can already carry kernel transforms that differ from the
         # panel's scanout orientation.  Allow devices to describe that without
         # changing the orientation Gamescope needs for the display itself.
@@ -262,7 +266,7 @@ class VirtualTrackpads:
         previous_active = self.config["blockTouchscreen"] or (
             self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
         )
-        self.config = load_config()
+        self.config = load_config(device_values=self.device_env)
         active = self.config["blockTouchscreen"] or (
             self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
         )

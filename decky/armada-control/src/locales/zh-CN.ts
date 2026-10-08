@@ -242,6 +242,8 @@ export const zhCN = {
   "trackpads.rightSize": "右侧大小 (%)",
   "trackpads.zones": "区域",
   "trackpads.sharedSize": "两个触控板的大小 (%)",
+  "trackpads.deckLikeSize": "Deck 风格尺寸（32.5 毫米）",
+  "trackpads.deckLikeSizeDescription": "根据屏幕的物理尺寸，近似匹配 Steam Deck 触控板的大小。",
   "trackpads.edgeGap": "距角落距离 (px)",
   "trackpads.feedback": "反馈",
   "trackpads.tapToClick": "轻触点击",

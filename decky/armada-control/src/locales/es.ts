@@ -24,6 +24,8 @@ export const es: Record<TranslationKey, string> = {
   "trackpads.rightSize": "Tamaño derecho (%)",
   "trackpads.zones": "Zonas",
   "trackpads.sharedSize": "Tamaño de ambos trackpads (%)",
+  "trackpads.deckLikeSize": "Tamaño Deck-like (32,5 mm)",
+  "trackpads.deckLikeSizeDescription": "Usa las dimensiones físicas de la pantalla para aproximarse al tamaño de un trackpad de Steam Deck.",
   "trackpads.edgeGap": "Separación de la esquina (px)",
   "trackpads.feedback": "Respuesta",
   "trackpads.tapToClick": "Toque para clic",

@@ -115,6 +115,7 @@ export interface VirtualTrackpadsConfig {
   mode: "simple" | "corners" | "floating" | "halves";
   tapToClick: boolean;
   limitToBounds: boolean;
+  deckLikeSize: boolean;
   leftSize: number;
   rightSize: number;
   edgeGap: number;
