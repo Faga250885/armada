@@ -137,7 +137,7 @@ class InputPlumber:
             "SendTouchEvent",
             GLib.Variant(
                 "(subddd)",
-                (f"Touchpad:{side.title()}Pad:Touch:Motion", index, touching, 1.0 if touching else 0.0, x, y),
+                (f"Touchpad:{side.title()}Pad:Motion", index, touching, 1.0 if touching else 0.0, x, y),
             ),
         )
 
@@ -147,7 +147,7 @@ class InputPlumber:
             "SendEvent",
             GLib.Variant(
                 "(sv)",
-                (f"Touchpad:{side.title()}Pad:Touch:Button:Press", GLib.Variant("b", pressed)),
+                (f"Touchpad:{side.title()}Pad:Button:Press", GLib.Variant("b", pressed)),
             ),
         )
 
