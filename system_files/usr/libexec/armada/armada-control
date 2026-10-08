@@ -530,7 +530,7 @@ def action_set_virtual_trackpads(request):
     required = set(VIRTUAL_TRACKPADS_DEFAULTS)
     if set(requested) != required:
         raise ValueError("incomplete virtual trackpad configuration")
-    for key in ("enabled", "blockTouchscreen", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
+    for key in ("enabled", "blockTouchscreen", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds", "fixedBottom", "centerDotEnabled"):
         if not isinstance(requested[key], bool):
             raise ValueError(f"invalid {key}")
     requested = dict(requested)
@@ -543,6 +543,15 @@ def action_set_virtual_trackpads(request):
         value = requested[key]
         if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
             raise ValueError(f"invalid {key}")
+    for key in ("borderColor", "dotColor", "centerDotColor"):
+        value = requested[key]
+        if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
+            raise ValueError(f"invalid {key}")
+        try:
+            int(value[1:], 16)
+        except ValueError as error:
+            raise ValueError(f"invalid {key}") from error
+        requested[key] = value.lower()
 
     # Steam only exposes the two pad inputs on the Steam Deck target.
     if requested["enabled"] and (requested["leftEnabled"] or requested["rightEnabled"]):

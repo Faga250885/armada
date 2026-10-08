@@ -10,11 +10,22 @@ DEFAULT = {
     "mode": "simple",
     "tapToClick": True,
     "limitToBounds": False,
+    "fixedBottom": True,
     "leftSize": 35,
     "rightSize": 35,
+    "edgeGap": 0,
     "hapticStrength": 35,
     "borderOpacity": 20,
     "backgroundOpacity": 12,
+    "borderRadius": 28,
+    "dotSize": 1,
+    "dotGap": 11,
+    "borderColor": "#ffffff",
+    "dotColor": "#ffffff",
+    "centerDotEnabled": False,
+    "centerDotSize": 8,
+    "centerDotOpacity": 35,
+    "centerDotColor": "#ffffff",
 }
 
 

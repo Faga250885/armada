@@ -115,11 +115,22 @@ export interface VirtualTrackpadsConfig {
   mode: "simple" | "corners" | "floating" | "halves";
   tapToClick: boolean;
   limitToBounds: boolean;
+  fixedBottom: boolean;
   leftSize: number;
   rightSize: number;
+  edgeGap: number;
   hapticStrength: number;
   borderOpacity: number;
   backgroundOpacity: number;
+  borderRadius: number;
+  dotSize: number;
+  dotGap: number;
+  borderColor: string;
+  dotColor: string;
+  centerDotEnabled: boolean;
+  centerDotSize: number;
+  centerDotOpacity: number;
+  centerDotColor: string;
 }
 
 export interface VirtualTrackpadsState {

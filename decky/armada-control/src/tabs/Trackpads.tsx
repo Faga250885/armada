@@ -1,5 +1,5 @@
 import { toaster } from "@decky/api";
-import { Field } from "@decky/ui";
+import { Field, PanelSectionRow } from "@decky/ui";
 import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { setVirtualTrackpads } from "../backend";
@@ -8,6 +8,27 @@ import { t } from "../i18n";
 import type { Config, VirtualTrackpadsConfig } from "../types";
 
 type EditableTrackpads = Omit<VirtualTrackpadsConfig, "supported">;
+
+function ColorEdit({ label, value, disabled, onChange }: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <PanelSectionRow>
+      <label className={`armada-color-field${disabled ? " armada-control-disabled" : ""}`}>
+        <span>{label}</span>
+        <input
+          type="color"
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.currentTarget.value)}
+        />
+      </label>
+    </PanelSectionRow>
+  );
+}
 
 export function Trackpads({ config, setConfig }: {
   config: Config;
@@ -57,6 +78,9 @@ export function Trackpads({ config, setConfig }: {
     | "trackpads.modeHalvesDescription");
   const deckControllerSelected = config.controllerType === "deck-uhid";
   const settingsDisabled = !pads.enabled;
+  const controlsDisabled = settingsDisabled || splitScreen;
+  const visualDisabled = controlsDisabled;
+  const centerDotDisabled = visualDisabled || pads.mode === "floating";
   return (
     <>
       <div className="armada-subheader">{t("trackpads.title")}</div>
@@ -91,45 +115,54 @@ export function Trackpads({ config, setConfig }: {
             ? { mode, leftEnabled: true, rightEnabled: true }
             : { mode }, true)}
         />
-        <Field description={modeDescription} />
+        <div className="armada-trackpads-note">{modeDescription}</div>
+        {splitScreen && <div className="armada-trackpads-note">{t("trackpads.halvesInvisible")}</div>}
+      <div className="armada-subheader">{t("trackpads.zones")}</div>
         <ToggleRow
           label={t("trackpads.left")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
           value={pads.leftEnabled}
-          disabled={!deckControllerSelected || settingsDisabled || splitScreen}
+          disabled={!deckControllerSelected || controlsDisabled}
           onChange={(leftEnabled) => update({ leftEnabled }, true)}
         />
-        <SliderEdit
-            label={t("trackpads.leftSize")}
-            value={pads.leftSize}
-            min={15}
-            max={60}
-            step={1}
-            disabled={settingsDisabled || !pads.leftEnabled || splitScreen}
-            onChange={(leftSize) => update({ leftSize })}
-          />
         <ToggleRow
           label={t("trackpads.right")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
           value={pads.rightEnabled}
-          disabled={!deckControllerSelected || settingsDisabled || splitScreen}
+          disabled={!deckControllerSelected || controlsDisabled}
           onChange={(rightEnabled) => update({ rightEnabled }, true)}
         />
         <SliderEdit
-            label={t("trackpads.rightSize")}
-            value={pads.rightSize}
-            min={15}
-            max={60}
-            step={1}
-            disabled={settingsDisabled || !pads.rightEnabled || splitScreen}
-            onChange={(rightSize) => update({ rightSize })}
-          />
+          label={t("trackpads.sharedSize")}
+          value={pads.leftSize}
+          min={15}
+          max={60}
+          step={1}
+          disabled={controlsDisabled}
+          onChange={(size) => update({ leftSize: size, rightSize: size })}
+        />
+        <ToggleRow
+          label={t("trackpads.fixedBottom")}
+          description={t("trackpads.fixedBottomDescription")}
+          value={pads.fixedBottom}
+          disabled={controlsDisabled || pads.mode !== "simple"}
+          onChange={(fixedBottom) => update({ fixedBottom }, true)}
+        />
+        <SliderEdit
+          label={t("trackpads.edgeGap")}
+          value={pads.edgeGap}
+          min={0}
+          max={160}
+          step={1}
+          disabled={controlsDisabled || pads.mode === "floating"}
+          onChange={(edgeGap) => update({ edgeGap })}
+        />
       <div className="armada-subheader">{t("trackpads.feedback")}</div>
         <ToggleRow
           label={t("trackpads.limitToBounds")}
           description={t("trackpads.limitToBoundsDescription")}
           value={pads.limitToBounds}
-          disabled={settingsDisabled || splitScreen}
+          disabled={controlsDisabled}
           onChange={(limitToBounds) => update({ limitToBounds }, true)}
         />
         <SliderEdit
@@ -138,31 +171,101 @@ export function Trackpads({ config, setConfig }: {
           min={0}
           max={100}
           step={5}
-          disabled={settingsDisabled || splitScreen}
+          disabled={controlsDisabled}
           onChange={(hapticStrength) => update({ hapticStrength })}
         />
-        <>
-          <SliderEdit
-            label={t("trackpads.borderOpacity")}
-            value={pads.borderOpacity}
-            min={5}
-            max={100}
-            step={5}
-            disabled={settingsDisabled || splitScreen}
-            onChange={(borderOpacity) => update({ borderOpacity })}
-          />
-          <SliderEdit
-            label={t("trackpads.backgroundOpacity")}
-            value={pads.backgroundOpacity}
-            min={0}
-            max={100}
-            step={5}
-            disabled={settingsDisabled || splitScreen}
-            onChange={(backgroundOpacity) => update({ backgroundOpacity })}
-          />
-        </>
-        <Field label={t("trackpads.touchscreenNotice")} />
-        <Field label={t("trackpads.deckTargetNotice")} />
+      <div className="armada-subheader">{t("trackpads.appearance")}</div>
+        <SliderEdit
+          label={t("trackpads.borderOpacity")}
+          value={pads.borderOpacity}
+          min={0}
+          max={100}
+          step={5}
+          disabled={visualDisabled}
+          onChange={(borderOpacity) => update({ borderOpacity })}
+        />
+        <SliderEdit
+          label={t("trackpads.borderRadius")}
+          value={pads.borderRadius}
+          min={0}
+          max={100}
+          step={1}
+          disabled={visualDisabled}
+          onChange={(borderRadius) => update({ borderRadius })}
+        />
+        <ColorEdit
+          label={t("trackpads.borderColor")}
+          value={pads.borderColor}
+          disabled={visualDisabled}
+          onChange={(borderColor) => update({ borderColor })}
+        />
+        <SliderEdit
+          label={t("trackpads.backgroundOpacity")}
+          value={pads.backgroundOpacity}
+          min={0}
+          max={100}
+          step={5}
+          disabled={visualDisabled}
+          onChange={(backgroundOpacity) => update({ backgroundOpacity })}
+        />
+        <SliderEdit
+          label={t("trackpads.dotSize")}
+          value={pads.dotSize}
+          min={1}
+          max={6}
+          step={1}
+          disabled={visualDisabled}
+          onChange={(dotSize) => update({ dotSize })}
+        />
+        <SliderEdit
+          label={t("trackpads.dotGap")}
+          value={pads.dotGap}
+          min={2}
+          max={24}
+          step={1}
+          disabled={visualDisabled}
+          onChange={(dotGap) => update({ dotGap })}
+        />
+        <ColorEdit
+          label={t("trackpads.dotColor")}
+          value={pads.dotColor}
+          disabled={visualDisabled}
+          onChange={(dotColor) => update({ dotColor })}
+        />
+      <div className="armada-subheader">{t("trackpads.centerIndicator")}</div>
+        <ToggleRow
+          label={t("trackpads.centerDot")}
+          description={t("trackpads.centerDotDescription")}
+          value={pads.centerDotEnabled}
+          disabled={centerDotDisabled}
+          onChange={(centerDotEnabled) => update({ centerDotEnabled }, true)}
+        />
+        <SliderEdit
+          label={t("trackpads.centerDotSize")}
+          value={pads.centerDotSize}
+          min={1}
+          max={32}
+          step={1}
+          disabled={centerDotDisabled || !pads.centerDotEnabled}
+          onChange={(centerDotSize) => update({ centerDotSize })}
+        />
+        <SliderEdit
+          label={t("trackpads.centerDotOpacity")}
+          value={pads.centerDotOpacity}
+          min={5}
+          max={100}
+          step={5}
+          disabled={centerDotDisabled || !pads.centerDotEnabled}
+          onChange={(centerDotOpacity) => update({ centerDotOpacity })}
+        />
+        <ColorEdit
+          label={t("trackpads.centerDotColor")}
+          value={pads.centerDotColor}
+          disabled={centerDotDisabled || !pads.centerDotEnabled}
+          onChange={(centerDotColor) => update({ centerDotColor })}
+        />
+        <div className="armada-trackpads-note">{t("trackpads.touchscreenNotice")}</div>
+        <div className="armada-trackpads-note">{t("trackpads.deckTargetNotice")}</div>
     </>
   );
 }

@@ -6,37 +6,73 @@ DEFAULT_CONFIG = {
     "mode": "simple",
     "tapToClick": True,
     "limitToBounds": False,
+    "fixedBottom": True,
     "leftSize": 35,
     "rightSize": 35,
+    "edgeGap": 0,
     "hapticStrength": 35,
     "borderOpacity": 20,
     "backgroundOpacity": 12,
+    "borderRadius": 28,
+    "dotSize": 1,
+    "dotGap": 11,
+    "borderColor": "#ffffff",
+    "dotColor": "#ffffff",
+    "centerDotEnabled": False,
+    "centerDotSize": 8,
+    "centerDotOpacity": 35,
+    "centerDotColor": "#ffffff",
 }
 
 NUMBER_RANGES = {
     "leftSize": (15, 60),
     "rightSize": (15, 60),
+    "edgeGap": (0, 160),
     "hapticStrength": (0, 100),
-    "borderOpacity": (5, 100),
+    "borderOpacity": (0, 100),
     "backgroundOpacity": (0, 100),
+    "borderRadius": (0, 100),
+    "dotSize": (1, 6),
+    "dotGap": (2, 24),
+    "centerDotSize": (1, 32),
+    "centerDotOpacity": (5, 100),
 }
+
+BOOLEAN_KEYS = (
+    "enabled", "blockTouchscreen", "leftEnabled", "rightEnabled",
+    "tapToClick", "limitToBounds", "fixedBottom", "centerDotEnabled",
+)
+COLOR_KEYS = ("borderColor", "dotColor", "centerDotColor")
 
 
 def clamp(value, minimum=0.0, maximum=1.0):
     return max(minimum, min(maximum, value))
 
 
+def valid_color(value):
+    if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
+        return False
+    try:
+        int(value[1:], 16)
+    except ValueError:
+        return False
+    return True
+
+
 def sanitize_config(value):
     result = dict(DEFAULT_CONFIG)
     if not isinstance(value, dict):
         return result
-    for key in ("enabled", "blockTouchscreen", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds"):
+    for key in BOOLEAN_KEYS:
         if isinstance(value.get(key), bool):
             result[key] = value[key]
     for key, (minimum, maximum) in NUMBER_RANGES.items():
         number = value.get(key)
         if isinstance(number, int) and not isinstance(number, bool):
             result[key] = max(minimum, min(maximum, number))
+    for key in COLOR_KEYS:
+        if valid_color(value.get(key)):
+            result[key] = value[key].lower()
     if value.get("mode") in ("simple", "corners", "floating", "halves"):
         result["mode"] = value["mode"]
     elif value.get("fourPads") is True:
@@ -70,9 +106,11 @@ def trackpad_at(x, y, config, aspect_ratio=16 / 9):
             continue
         height = config[f"{side}Size"] / 100.0
         width = height / aspect_ratio
-        left = 0.0 if side == "left" else 1.0 - width
-        top = 1.0 - height
-        if left <= x <= left + width and top <= y <= 1.0:
+        gap_y = config["edgeGap"] / 1080.0
+        gap_x = gap_y / aspect_ratio
+        left = gap_x if side == "left" else 1.0 - gap_x - width
+        top = 1.0 - gap_y - height
+        if left <= x <= left + width and top <= y <= top + height:
             return side, clamp((x - left) / width), clamp((y - top) / height)
     return None
 
@@ -86,7 +124,9 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
             continue
         height = config[f"{side}Size"] / 100.0
         width = height / aspect_ratio
-        left = 0.0 if side == "left" else 1.0 - width
+        gap_y = config["edgeGap"] / 1080.0
+        gap_x = gap_y / aspect_ratio
+        left = gap_x if side == "left" else 1.0 - gap_x - width
         mode = config["mode"]
         if mode in ("floating", "halves"):
             if (side == "left" and x <= 0.5) or (side == "right" and x > 0.5):
@@ -95,9 +135,9 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
                     return side, "half", clamp(local_x), clamp(y)
                 return side, "floating", 0.5, 0.5
             continue
-        corners = ("top", "bottom") if mode == "corners" else ("bottom",)
+        corners = ("top", "bottom") if mode == "corners" or not config["fixedBottom"] else ("bottom",)
         for corner in corners:
-            top = 0.0 if corner == "top" else 1.0 - height
+            top = gap_y if corner == "top" else 1.0 - gap_y - height
             if left <= x <= left + width and top <= y <= top + height:
                 return side, corner, clamp((x - left) / width), clamp((y - top) / height)
     return None
@@ -115,8 +155,10 @@ def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, a
             clamp(0.5 + (x - anchor_x) / width),
             clamp(0.5 + (y - anchor_y) / height),
         )
-    left = 0.0 if side == "left" else 1.0 - width
-    top = 0.0 if zone == "top" else 1.0 - height
+    gap_y = config["edgeGap"] / 1080.0
+    gap_x = gap_y / aspect_ratio
+    left = gap_x if side == "left" else 1.0 - gap_x - width
+    top = gap_y if zone == "top" else 1.0 - gap_y - height
     return clamp((x - left) / width), clamp((y - top) / height)
 
 
@@ -131,6 +173,8 @@ def point_in_trackpad_bounds(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.
             anchor_x - width / 2 <= x <= anchor_x + width / 2
             and anchor_y - height / 2 <= y <= anchor_y + height / 2
         )
-    left = 0.0 if side == "left" else 1.0 - width
-    top = 0.0 if zone == "top" else 1.0 - height
+    gap_y = config["edgeGap"] / 1080.0
+    gap_x = gap_y / aspect_ratio
+    left = gap_x if side == "left" else 1.0 - gap_x - width
+    top = gap_y if zone == "top" else 1.0 - gap_y - height
     return left <= x <= left + width and top <= y <= top + height

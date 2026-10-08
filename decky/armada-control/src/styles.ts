@@ -2,12 +2,13 @@ import { gamepadSliderClasses } from "@decky/ui";
 
 export const styles = `
       .armada-control-tabs {
-        height: 95%;
-        width: 316px;
-        position: fixed;
-        margin-top: -12px;
-        margin-left: -8px;
-        overflow: hidden;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        position: relative;
+        margin: 0;
+        overflow-x: hidden;
+        box-sizing: border-box;
       }
       .armada-control-tabs > div > div:first-child::before {
         background: #0D141C;
@@ -17,6 +18,10 @@ export const styles = `
       .armada-control-tabs [role="tabpanel"] {
         padding-left: 0 !important;
         padding-right: 0 !important;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
       }
       .armada-control-tabs [role="tablist"] {
         display: flex;
@@ -38,7 +43,17 @@ export const styles = `
         margin: 0;
       }
       .armada-control-tabs .armada-control-tab-content {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+        box-sizing: border-box;
         padding-bottom: 24px;
+      }
+      .armada-control-tabs .armada-control-tab-content > * {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
       }
       .armada-control-tabs .armada-slider-field {
         width: 100%;
@@ -77,6 +92,42 @@ export const styles = `
         font-size: 12px;
         line-height: 16px;
         opacity: 0.62;
+      }
+      .armada-control-tabs .armada-trackpads-note {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        padding: 3px 14px 9px;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        line-height: 16px;
+        opacity: 0.68;
+      }
+      .armada-control-tabs .armada-color-field {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .armada-control-tabs .armada-color-field span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .armada-control-tabs .armada-color-field input[type="color"] {
+        flex: 0 0 52px;
+        width: 52px;
+        height: 34px;
+        padding: 2px;
+        border: 1px solid rgba(255,255,255,.25);
+        border-radius: 6px;
+        background: transparent;
+      }
+      .armada-control-tabs .armada-control-disabled {
+        opacity: .4;
       }
       .armada-control-tabs .armada-note-error {
         color: #ff6b6b;

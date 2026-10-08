@@ -20,7 +20,7 @@ config = sanitize_config({
     "backgroundOpacity": 45,
 })
 assert config["hapticStrength"] == 100
-assert config["borderOpacity"] == 5
+assert config["borderOpacity"] == 0
 assert config["backgroundOpacity"] == 45
 assert sanitize_config({"leftEnabled": 1})["leftEnabled"] is False
 assert sanitize_config({"enabled": False, "leftEnabled": True})["enabled"] is False
@@ -81,9 +81,12 @@ assert not point_in_trackpad_bounds(0.3, 0.9, "left", "bottom", simple)
 print("Virtual trackpad geometry and configuration tests passed")
 PYEOF
 
-grep -Fq 'borderRadius: "12px"' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'borderRadius: `${config.borderRadius / 2}%`' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
 grep -Fq 'context.arc(' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
 grep -Fq 'HOLD_MS = 1000' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'createPortal(' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'zIndex: 2147483647' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'config.mode === "halves"' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
 grep -Fq '{ id: "Trackpads", title: tabIcons.Trackpads' "$ROOT/decky/armada-control/src/Content.tsx"
 ! grep -Fq '<Trackpads config={config} setConfig={setConfig} />' "$ROOT/decky/armada-control/src/tabs/Settings.tsx"
 grep -Fq 'fcntl.ioctl(fd, EVIOCGRAB, 1)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"

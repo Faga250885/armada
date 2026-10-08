@@ -19,11 +19,24 @@ const EMPTY: VirtualTrackpadsState = {
 };
 const HOLD_MS = 1000;
 
-function ReactiveDots({ active, touchX, touchY, opacity }: {
+function colorChannels(color: string) {
+  const value = /^#[0-9a-f]{6}$/i.test(color) ? Number.parseInt(color.slice(1), 16) : 0xffffff;
+  return [value >> 16, (value >> 8) & 255, value & 255];
+}
+
+function colorWithOpacity(color: string, opacity: number) {
+  const [red, green, blue] = colorChannels(color);
+  return `rgba(${red},${green},${blue},${opacity / 100})`;
+}
+
+function ReactiveDots({ active, touchX, touchY, opacity, color, dotSize, dotGap }: {
   active: boolean;
   touchX: number;
   touchY: number;
   opacity: number;
+  color: string;
+  dotSize: number;
+  dotGap: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strengthRef = useRef(0);
@@ -51,9 +64,9 @@ function ReactiveDots({ active, touchX, touchY, opacity }: {
       if (!context) return;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
-      context.fillStyle = `rgba(255,255,255,${opacity / 100})`;
-      const spacing = 12;
-      const radius = 2;
+      context.fillStyle = colorWithOpacity(color, opacity);
+      const spacing = dotSize + dotGap;
+      const radius = dotSize / 2;
       const influenceRadius = Math.min(width, height) * 0.28;
       const centerX = touchX * width;
       const centerY = touchY * height;
@@ -83,7 +96,7 @@ function ReactiveDots({ active, touchX, touchY, opacity }: {
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [active, touchX, touchY, opacity]);
+  }, [active, touchX, touchY, opacity, color, dotSize, dotGap]);
 
   return <canvas ref={canvasRef} aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />;
 }
@@ -182,7 +195,7 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
       ? zone === "top" || zone === "bottom"
       : config.mode === "floating"
         ? zone === "floating"
-        : zone === "bottom";
+        : zone === "bottom" || (!config.fixedBottom && zone === "top");
     const shown = sideEnabled && available && (
       previewing || (visible[`${side}Active` as const] && selectedZone === zone)
     );
@@ -198,8 +211,8 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
             transform: "translate(-50%, -50%)",
           }
         : {
-            [zone]: 0,
-            [side]: 0,
+            [zone]: `${config.edgeGap}px`,
+            [side]: `${config.edgeGap}px`,
             height: `${size}vh`,
             aspectRatio: "1 / 1",
           };
@@ -212,8 +225,8 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
           ...position,
           boxSizing: "border-box",
           overflow: "hidden",
-          border: `1px solid rgba(255,255,255,${config.borderOpacity / 100})`,
-          borderRadius: "12px",
+          border: `1px solid ${colorWithOpacity(config.borderColor, config.borderOpacity)}`,
+          borderRadius: `${config.borderRadius / 2}%`,
           background: "transparent",
           boxShadow: "none",
           opacity: shown ? 1 : 0,
@@ -222,12 +235,43 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
         }}
       >
         <ReactiveDots
-          active={sideActive}
+          active={sideActive && selectedZone === zone}
           touchX={touchX / 100}
           touchY={touchY / 100}
           opacity={config.backgroundOpacity}
+          color={config.dotColor}
+          dotSize={config.dotSize}
+          dotGap={config.dotGap}
         />
       </div>
+    );
+  };
+  const centerDot = (side: "left" | "right", zone: "top" | "bottom") => {
+    const sideEnabled = config[`${side}Enabled` as const];
+    const available = config.mode === "corners"
+      || (config.mode === "simple" && (zone === "bottom" || !config.fixedBottom));
+    if (!config.centerDotEnabled || !sideEnabled || !available) return null;
+    const size = config[`${side}Size` as const];
+    return (
+      <div
+        key={`center-${side}-${zone}`}
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: side === "left"
+            ? `calc(${config.edgeGap}px + ${size / 2}vh)`
+            : `calc(100% - ${config.edgeGap}px - ${size / 2}vh)`,
+          top: zone === "top"
+            ? `calc(${config.edgeGap}px + ${size / 2}vh)`
+            : `calc(100% - ${config.edgeGap}px - ${size / 2}vh)`,
+          width: `${config.centerDotSize}px`,
+          height: `${config.centerDotSize}px`,
+          borderRadius: "50%",
+          background: config.centerDotColor,
+          opacity: config.centerDotOpacity / 100,
+          transform: "translate(-50%, -50%)",
+        }}
+      />
     );
   };
   return createPortal(
@@ -238,6 +282,10 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
       {pad("right", "top")}
       {pad("right", "bottom")}
       {pad("right", "floating")}
+      {centerDot("left", "top")}
+      {centerDot("left", "bottom")}
+      {centerDot("right", "top")}
+      {centerDot("right", "bottom")}
     </div>,
     document.body,
   );
