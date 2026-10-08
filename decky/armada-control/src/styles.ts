@@ -2,12 +2,14 @@ import { gamepadSliderClasses } from "@decky/ui";
 
 export const styles = `
       .armada-control-tabs {
-        width: 100%;
-        max-width: 100%;
+        height: 95%;
+        width: 316px;
+        max-width: calc(100vw - 24px);
         min-width: 0;
-        position: relative;
-        margin: 0;
-        overflow-x: hidden;
+        position: fixed;
+        margin-top: -12px;
+        margin-left: -8px;
+        overflow: hidden;
         box-sizing: border-box;
       }
       .armada-control-tabs > div > div:first-child::before {
