@@ -6,6 +6,11 @@ on:
       - main
       - staging
   workflow_dispatch:
+    inputs:
+      tests_only:
+        description: "Run graphical regression tests without publishing an image"
+        type: boolean
+        default: false
 
 env:
   ARMADA_CANONICAL_IMAGE: "ghcr.io/armada-os/armada"
@@ -21,8 +26,28 @@ concurrency:
   queue: max
 
 jobs:
+  overlay_test:
+    name: Overlay runtime tests
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - name: Install graphical test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-gi-cairo python3-cairo gir1.2-gtk-4.0 xvfb xauth libxfixes3 dbus-daemon
+      - name: Verify overlay startup and rendered pixels
+        run: dbus-run-session -- /usr/bin/python3 tests/virtual-trackpads-overlay-test.py
+      - name: Verify virtual trackpad configuration
+        run: bash tests/virtual-trackpads-test.sh
+
   packages:
     name: Packages
+    if: ${{ !inputs.tests_only }}
     permissions:
       contents: read
       packages: write
@@ -31,7 +56,7 @@ jobs:
 
   build_push:
     name: Container image
-    needs: packages
+    needs: [packages, overlay_test]
     runs-on: ubuntu-24.04-arm
     outputs:
       channel: ${{ steps.channel.outputs.channel }}

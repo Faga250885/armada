@@ -10,16 +10,24 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, "/usr/lib/armada")
+from armada_overlay_session import discover_gamescope_environment
+from armada_virtual_trackpads import apply_deck_like_size, sanitize_config
+
+# Importing Gtk initializes it, including a cached success/failure flag inside
+# PyGObject. A service starts before Steam, so discover the session FIRST.
+if __name__ == "__main__":
+    display_name = discover_gamescope_environment()
+    print(f"virtual-trackpads-overlay: using Steam display {display_name}", flush=True)
+
 import cairo
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("GdkX11", "4.0")
+gi.require_foreign("cairo")
 from gi.repository import Gdk, GdkX11, GLib, Gtk
-
-sys.path.insert(0, "/usr/lib/armada")
-from armada_virtual_trackpads import apply_deck_like_size, sanitize_config
 
 
 CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
@@ -41,97 +49,6 @@ def device_env():
         if separator:
             result[key] = value.strip().strip("'\"")
     return result
-
-
-def xwayland_authorities():
-    """Return Xwayland -auth files indexed by their display name."""
-    result = {}
-    for cmdline_path in Path("/proc").glob("[0-9]*/cmdline"):
-        try:
-            arguments = [
-                item.decode(errors="ignore")
-                for item in cmdline_path.read_bytes().split(b"\0")
-                if item
-            ]
-        except (OSError, PermissionError):
-            continue
-        if not arguments or "xwayland" not in Path(arguments[0]).name.lower():
-            continue
-        display = next((item for item in arguments[1:] if item.startswith(":")), None)
-        try:
-            auth_index = arguments.index("-auth") + 1
-            authority = arguments[auth_index]
-        except (ValueError, IndexError):
-            authority = None
-        if display and authority:
-            result.setdefault(display, authority)
-    return result
-
-
-def can_open_x11(display, authority):
-    """Test the exact X11 credentials before GTK caches its default display."""
-    os.environ["DISPLAY"] = display
-    if authority:
-        os.environ["XAUTHORITY"] = authority
-    else:
-        os.environ.pop("XAUTHORITY", None)
-    x11 = ctypes.CDLL("libX11.so.6")
-    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
-    x11.XOpenDisplay.restype = ctypes.c_void_p
-    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
-    connection = x11.XOpenDisplay(display.encode())
-    if not connection:
-        return False
-    x11.XCloseDisplay(connection)
-    return True
-
-
-def import_gamescope_environment(timeout=30.0):
-    """Import and validate Steam's Xwayland connection inside Gamescope."""
-    deadline = time.monotonic() + timeout
-    uid = os.getuid()
-    while time.monotonic() < deadline:
-        candidates = []
-        for environ_path in Path("/proc").glob("[0-9]*/environ"):
-            try:
-                if environ_path.stat().st_uid != uid:
-                    continue
-                values = environ_path.read_bytes().split(b"\0")
-            except (OSError, PermissionError):
-                continue
-            environment = {}
-            for value in values:
-                key, separator, data = value.partition(b"=")
-                if separator:
-                    environment[key.decode(errors="ignore")] = data.decode(errors="ignore")
-            if not environment.get("DISPLAY") or not environment.get("GAMESCOPE_WAYLAND_DISPLAY"):
-                continue
-            candidates.append(environment)
-        authorities = xwayland_authorities()
-        # Prefer a process that already carries XAUTHORITY, then try the
-        # authoritative -auth argument of the matching Xwayland server.
-        candidates.sort(key=lambda item: bool(item.get("XAUTHORITY")), reverse=True)
-        attempted = set()
-        for environment in candidates:
-            display = environment["DISPLAY"]
-            auth_choices = (
-                environment.get("XAUTHORITY"),
-                authorities.get(display),
-                None,
-            )
-            for authority in auth_choices:
-                key = (display, authority)
-                if key in attempted:
-                    continue
-                attempted.add(key)
-                if not can_open_x11(display, authority):
-                    continue
-                os.environ["GAMESCOPE_WAYLAND_DISPLAY"] = environment[
-                    "GAMESCOPE_WAYLAND_DISPLAY"
-                ]
-                return display
-        time.sleep(0.25)
-    raise RuntimeError("no usable Gamescope Xwayland display or authorization found")
 
 
 def clamp(value, minimum=0.0, maximum=1.0):
@@ -199,9 +116,12 @@ class X11Overlay:
         self.window = 0
 
     def attach(self, surface, width, height):
+        # GDK creates this window on a different X connection. Flush and wait
+        # for it before setting the marker/shape through our Xlib connection.
+        surface.get_display().sync()
         self.window = int(GdkX11.X11Surface.get_xid(surface))
         if not self.display or not self.window:
-            return
+            raise RuntimeError("overlay did not create an X11 window")
         self.x11.XMoveResizeWindow(self.display, self.window, 0, 0, width, height)
         atom = self.x11.XInternAtom(
             self.display, b"ARMADA_VIRTUAL_TRACKPADS_OVERLAY", False
@@ -223,6 +143,7 @@ class X11Overlay:
         )
         self.xfixes.XFixesDestroyRegion(self.display, region)
         self.x11.XFlush(self.display)
+        print(f"virtual-trackpads-overlay: mapped xid={self.window:#x}, size={width}x{height}", flush=True)
 
 class TrackpadOverlay(Gtk.Application):
     def __init__(self):
@@ -241,6 +162,7 @@ class TrackpadOverlay(Gtk.Application):
         self.preview_until = 0.0
         self.had_visual = False
         self.device_env = device_env()
+        self.reported_frame = False
 
     def do_activate(self):
         display = Gdk.Display.get_default()
@@ -254,7 +176,7 @@ class TrackpadOverlay(Gtk.Application):
             self.width, self.height = geometry.width, geometry.height
 
         provider = Gtk.CssProvider()
-        provider.load_from_data("window { background: transparent; }")
+        provider.load_from_data(b"window { background: transparent; box-shadow: none; }")
         Gtk.StyleContext.add_provider_for_display(
             display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
@@ -397,6 +319,9 @@ class TrackpadOverlay(Gtk.Application):
         context.fill()
 
     def draw(self, _area, context, _width, _height):
+        if not self.reported_frame:
+            print("virtual-trackpads-overlay: first GTK/Cairo frame rendered", flush=True)
+            self.reported_frame = True
         if not self.config.get("enabled") or self.config.get("mode") == "halves":
             return
         previewing = time.monotonic() < self.preview_until
@@ -412,11 +337,9 @@ class TrackpadOverlay(Gtk.Application):
 
 
 if __name__ == "__main__":
-    display_name = import_gamescope_environment()
-    display = Gdk.Display.open(display_name)
+    display = Gdk.Display.get_default()
     if display is None:
-        raise RuntimeError(f"GDK could not open validated display {display_name}")
-    Gdk.DisplayManager.get().set_default_display(display)
+        raise RuntimeError(f"GTK could not initialize validated display {display_name}")
     print(
         f"virtual-trackpads-overlay: connected to Gamescope display {display_name}",
         flush=True,

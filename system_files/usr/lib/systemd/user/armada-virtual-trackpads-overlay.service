@@ -4,6 +4,7 @@ PartOf=gamescope-session-plus@steam.service
 
 [Service]
 Environment=GDK_BACKEND=x11
+Environment=GSK_RENDERER=cairo
 ExecStart=/usr/libexec/armada/virtual-trackpads-overlay
 Restart=always
 RestartSec=2

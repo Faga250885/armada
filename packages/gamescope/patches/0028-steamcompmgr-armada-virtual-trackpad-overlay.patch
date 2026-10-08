@@ -223,12 +223,18 @@ index 373d697..5384e23 100644
  				if (pFocus->overrideWindow &&
  					pFocus->overrideWindow->type == steamcompmgr_win_type_t::XWAYLAND &&
  					pFocus->overrideWindow->xwayland().ctx == server->ctx.get())
-@@ -8060,0 +8111,5 @@ bool handle_done_commit( steamcompmgr_win_t *w, xwayland_ctx_t *ctx, uint64_t co
+@@ -8056,6 +8107,11 @@ bool handle_done_commit( steamcompmgr_win_t *w, xwayland_ctx_t *ctx, uint64_t co
+ 				if ( w == pFocus->notificationWindow && w->opacity != TRANSLUCENT )
+ 				{
+ 					hasRepaintNonBasePlane = true;
+ 				}
 +
 +				if ( w == pFocus->armadaOverlayWindow && w->opacity != TRANSLUCENT )
 +				{
 +					hasRepaintNonBasePlane = true;
 +				}
+ 
+ 				// matt: the performance overlay in Steam will interfere with VRR if we let this repaint.
 @@ -9028,6 +9078,7 @@ void init_xwayland_ctx(uint32_t serverId, gamescope_xwayland_server_t *xwayland_
  	ctx->atoms.gameAtom = XInternAtom(ctx->dpy, GAME_PROP, false);
  	ctx->atoms.overlayAtom = XInternAtom(ctx->dpy, OVERLAY_PROP, false);
