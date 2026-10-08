@@ -1,0 +1,12 @@
+[Unit]
+Description=Armada virtual trackpad Gamescope overlay
+PartOf=gamescope-session-plus@steam.service
+
+[Service]
+Environment=GDK_BACKEND=x11
+ExecStart=/usr/libexec/armada/virtual-trackpads-overlay
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=gamescope-session-plus@steam.service

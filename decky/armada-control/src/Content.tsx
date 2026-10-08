@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { getConfig, getInstalledGames, savePowerConfig, saveTweaks } from "./backend";
 import { RgbLighting } from "./components/RgbLighting";
-import { VirtualTrackpadOverlay } from "./components/VirtualTrackpadOverlay";
 import { useDebouncedSave } from "./hooks/useDebouncedSave";
 import { useLocale } from "./hooks/useLocale";
 import { t } from "./i18n";
@@ -88,7 +87,6 @@ export function Content() {
   );
   return (
     <>
-      <VirtualTrackpadOverlay config={config.virtualTrackpads} />
       <div className="armada-control-tabs">
         <style>{styles}</style>
         <Tabs

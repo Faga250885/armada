@@ -161,7 +161,14 @@ class InputPlumber:
 class VirtualTrackpads:
     def __init__(self):
         self.config = load_config()
-        self.orientation = parse_device_env().get("ARMADA_PANEL_ORIENTATION", "normal")
+        device_env = parse_device_env()
+        # A digitizer can already carry kernel transforms that differ from the
+        # panel's scanout orientation.  Allow devices to describe that without
+        # changing the orientation Gamescope needs for the display itself.
+        self.orientation = device_env.get(
+            "ARMADA_TOUCHSCREEN_ORIENTATION",
+            device_env.get("ARMADA_PANEL_ORIENTATION", "normal"),
+        )
         self.ip = InputPlumber()
         self.fd = None
         self.x_range = (0, 1)

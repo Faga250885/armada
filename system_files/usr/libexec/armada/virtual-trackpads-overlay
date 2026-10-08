@@ -1,0 +1,309 @@
+#!/usr/bin/python3
+"""Draw the virtual trackpads in Gamescope's non-interactive overlay plane."""
+
+import ctypes
+import json
+import math
+import time
+from pathlib import Path
+
+import cairo
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("GdkX11", "4.0")
+from gi.repository import Gdk, GdkX11, GLib, Gtk
+
+
+CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
+STATE_PATH = Path("/run/armada/virtual-trackpads-state.json")
+HOLD_SECONDS = 1.0
+FADE_SECONDS = 0.28
+FRAME_MS = 16
+
+
+def clamp(value, minimum=0.0, maximum=1.0):
+    return max(minimum, min(maximum, value))
+
+
+def load_json(path, fallback):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else fallback
+    except (OSError, ValueError, TypeError):
+        return fallback
+
+
+def color(value, opacity):
+    try:
+        red = int(value[1:3], 16) / 255.0
+        green = int(value[3:5], 16) / 255.0
+        blue = int(value[5:7], 16) / 255.0
+    except (TypeError, ValueError):
+        red = green = blue = 1.0
+    return red, green, blue, clamp(opacity / 100.0)
+
+
+def rounded_rectangle(context, x, y, width, height, radius):
+    radius = min(radius, width / 2.0, height / 2.0)
+    context.new_sub_path()
+    context.arc(x + width - radius, y + radius, radius, -math.pi / 2, 0)
+    context.arc(x + width - radius, y + height - radius, radius, 0, math.pi / 2)
+    context.arc(x + radius, y + height - radius, radius, math.pi / 2, math.pi)
+    context.arc(x + radius, y + radius, radius, math.pi, math.pi * 1.5)
+    context.close_path()
+
+
+class X11Overlay:
+    XA_CARDINAL = 6
+    PROP_MODE_REPLACE = 0
+    SHAPE_INPUT = 2
+
+    def __init__(self):
+        self.x11 = ctypes.CDLL("libX11.so.6")
+        self.xfixes = ctypes.CDLL("libXfixes.so.3")
+        self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        self.x11.XOpenDisplay.restype = ctypes.c_void_p
+        self.x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        self.x11.XInternAtom.restype = ctypes.c_ulong
+        self.x11.XMoveResizeWindow.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+            ctypes.c_uint, ctypes.c_uint,
+        ]
+        self.x11.XChangeProperty.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
+            ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int,
+        ]
+        self.x11.XDeleteProperty.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong]
+        self.x11.XFlush.argtypes = [ctypes.c_void_p]
+        self.xfixes.XFixesCreateRegion.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+        self.xfixes.XFixesCreateRegion.restype = ctypes.c_ulong
+        self.xfixes.XFixesSetWindowShapeRegion.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_ulong,
+        ]
+        self.xfixes.XFixesDestroyRegion.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self.display = self.x11.XOpenDisplay(None)
+        self.window = 0
+        self.claimed = False
+
+    def attach(self, surface, width, height):
+        self.window = int(GdkX11.X11Surface.get_xid(surface))
+        if not self.display or not self.window:
+            return
+        # One pixel narrower than the root makes Gamescope classify this as a
+        # non-interactive notification plane instead of Steam's QAM overlay.
+        self.x11.XMoveResizeWindow(self.display, self.window, 0, 0, width - 1, height)
+        region = self.xfixes.XFixesCreateRegion(self.display, None, 0)
+        self.xfixes.XFixesSetWindowShapeRegion(
+            self.display, self.window, self.SHAPE_INPUT, 0, 0, region
+        )
+        self.xfixes.XFixesDestroyRegion(self.display, region)
+        self.x11.XFlush(self.display)
+
+    def set_claimed(self, claimed):
+        if not self.display or not self.window or claimed == self.claimed:
+            return
+        atom = self.x11.XInternAtom(self.display, b"STEAM_OVERLAY", False)
+        if claimed:
+            value = ctypes.c_ulong(1)
+            self.x11.XChangeProperty(
+                self.display,
+                self.window,
+                atom,
+                self.XA_CARDINAL,
+                32,
+                self.PROP_MODE_REPLACE,
+                ctypes.cast(ctypes.pointer(value), ctypes.POINTER(ctypes.c_ubyte)),
+                1,
+            )
+        else:
+            self.x11.XDeleteProperty(self.display, self.window, atom)
+        self.x11.XFlush(self.display)
+        self.claimed = claimed
+
+
+class TrackpadOverlay(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id="dev.armada.VirtualTrackpadsOverlay")
+        self.window = None
+        self.area = None
+        self.xoverlay = X11Overlay()
+        self.width = 1920
+        self.height = 1080
+        self.config = {}
+        self.state = {}
+        self.last_active = {"left": 0.0, "right": 0.0}
+        self.fade = {"left": 0.0, "right": 0.0}
+        self.last_frame = time.monotonic()
+        self.config_stamp = None
+        self.preview_until = 0.0
+
+    def do_activate(self):
+        display = Gdk.Display.get_default()
+        if display is None:
+            self.quit()
+            return
+        monitors = display.get_monitors()
+        monitor = monitors.get_item(0) if monitors.get_n_items() else None
+        if monitor is not None:
+            geometry = monitor.get_geometry()
+            self.width, self.height = geometry.width, geometry.height
+
+        provider = Gtk.CssProvider()
+        provider.load_from_data("window { background: transparent; }")
+        Gtk.StyleContext.add_provider_for_display(
+            display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+        self.window = Gtk.ApplicationWindow(application=self)
+        self.window.set_title("Armada Virtual Trackpads Overlay")
+        self.window.set_decorated(False)
+        self.window.set_focusable(False)
+        self.window.set_can_focus(False)
+        self.window.set_default_size(max(1, self.width - 1), self.height)
+        self.area = Gtk.DrawingArea()
+        self.area.set_content_width(max(1, self.width - 1))
+        self.area.set_content_height(self.height)
+        self.area.set_draw_func(self.draw)
+        self.window.set_child(self.area)
+        self.window.connect("map", self.on_map)
+        self.window.present()
+        GLib.timeout_add(FRAME_MS, self.tick)
+
+    def on_map(self, window):
+        surface = window.get_surface()
+        if surface is not None:
+            self.xoverlay.attach(surface, self.width, self.height)
+
+    def tick(self):
+        now = time.monotonic()
+        elapsed = min(0.1, now - self.last_frame)
+        self.last_frame = now
+        try:
+            next_stamp = CONFIG_PATH.stat().st_mtime_ns
+        except OSError:
+            next_stamp = None
+        if self.config_stamp is not None and next_stamp != self.config_stamp:
+            self.preview_until = now + HOLD_SECONDS
+        self.config_stamp = next_stamp
+        self.config = load_json(CONFIG_PATH, {})
+        self.state = load_json(STATE_PATH, {})
+        enabled = bool(self.config.get("enabled")) and self.config.get("mode") != "halves"
+        previewing = enabled and now < self.preview_until
+        anything_visible = False
+        for side in ("left", "right"):
+            active = enabled and bool(self.config.get(f"{side}Enabled")) and bool(
+                self.state.get(f"{side}Active")
+            )
+            if active:
+                self.last_active[side] = now
+            held = enabled and now - self.last_active[side] <= HOLD_SECONDS
+            target = 1.0 if active or held or previewing else 0.0
+            speed = elapsed / FADE_SECONDS
+            if target > self.fade[side]:
+                self.fade[side] = min(target, self.fade[side] + speed)
+            else:
+                self.fade[side] = max(target, self.fade[side] - speed)
+            anything_visible |= self.fade[side] > 0.001
+        center_visible = enabled and bool(self.config.get("centerDotEnabled")) and self.config.get("mode") != "floating"
+        self.xoverlay.set_claimed(anything_visible or center_visible or previewing)
+        if self.area is not None and (anything_visible or center_visible):
+            self.area.queue_draw()
+        return GLib.SOURCE_CONTINUE
+
+    def pad_rect(self, side, zone):
+        size = float(self.config.get(f"{side}Size", 35)) / 100.0 * self.height
+        gap = float(self.config.get("edgeGap", 0))
+        if zone == "floating":
+            x = float(self.state.get(f"{side}X", 0.25 if side == "left" else 0.75)) * self.width - size / 2
+            y = float(self.state.get(f"{side}Y", 0.5)) * self.height - size / 2
+        else:
+            x = gap if side == "left" else self.width - gap - size
+            y = gap if zone == "top" else self.height - gap - size
+        return x, y, size, size
+
+    def zones(self, side):
+        mode = self.config.get("mode", "simple")
+        if mode == "corners":
+            return ("top", "bottom")
+        if mode == "floating":
+            return ("floating",)
+        if self.config.get("fixedBottom", True):
+            return ("bottom",)
+        return ("top", "bottom")
+
+    def draw_dots(self, context, rect, side, alpha):
+        x, y, width, height = rect
+        dot_size = max(1.0, float(self.config.get("dotSize", 1)))
+        spacing = dot_size + max(2.0, float(self.config.get("dotGap", 11)))
+        touch_x = clamp(float(self.state.get(f"{side}TouchX", 0.5)))
+        touch_y = clamp(float(self.state.get(f"{side}TouchY", 0.5)))
+        active = bool(self.state.get(f"{side}Active"))
+        influence_radius = min(width, height) * 0.28
+        red, green, blue, opacity = color(
+            self.config.get("dotColor", "#ffffff"),
+            float(self.config.get("backgroundOpacity", 12)),
+        )
+        context.set_source_rgba(red, green, blue, opacity * alpha)
+        base_x = spacing / 2
+        while base_x < width:
+            base_y = spacing / 2
+            while base_y < height:
+                delta_x = base_x - touch_x * width
+                delta_y = base_y - touch_y * height
+                distance = math.hypot(delta_x, delta_y)
+                influence = max(0.0, 1.0 - distance / influence_radius) if active else 0.0
+                push = influence * influence * 9.0
+                draw_x = x + base_x + (delta_x / distance * push if distance > 0.01 else 0)
+                draw_y = y + base_y + (delta_y / distance * push if distance > 0.01 else 0)
+                context.arc(draw_x, draw_y, dot_size / 2.0, 0, math.tau)
+                context.fill()
+                base_y += spacing
+            base_x += spacing
+
+    def draw_pad(self, context, side, zone, alpha):
+        rect = self.pad_rect(side, zone)
+        x, y, width, height = rect
+        radius = min(width, height) / 2.0 * clamp(float(self.config.get("borderRadius", 28)) / 100.0)
+        context.save()
+        rounded_rectangle(context, x, y, width, height, radius)
+        context.clip()
+        self.draw_dots(context, rect, side, alpha)
+        context.restore()
+        red, green, blue, opacity = color(
+            self.config.get("borderColor", "#ffffff"),
+            float(self.config.get("borderOpacity", 20)),
+        )
+        context.set_source_rgba(red, green, blue, opacity * alpha)
+        context.set_line_width(1.0)
+        rounded_rectangle(context, x + 0.5, y + 0.5, width - 1, height - 1, max(0, radius - 0.5))
+        context.stroke()
+
+    def draw_center(self, context, side, zone):
+        x, y, width, height = self.pad_rect(side, zone)
+        size = max(1.0, float(self.config.get("centerDotSize", 8)))
+        red, green, blue, opacity = color(
+            self.config.get("centerDotColor", "#ffffff"),
+            float(self.config.get("centerDotOpacity", 35)),
+        )
+        context.set_source_rgba(red, green, blue, opacity)
+        context.arc(x + width / 2, y + height / 2, size / 2, 0, math.tau)
+        context.fill()
+
+    def draw(self, _area, context, _width, _height):
+        if not self.config.get("enabled") or self.config.get("mode") == "halves":
+            return
+        previewing = time.monotonic() < self.preview_until
+        for side in ("left", "right"):
+            if not self.config.get(f"{side}Enabled"):
+                continue
+            selected = self.state.get(f"{side}Zone", "bottom")
+            for zone in self.zones(side):
+                if self.fade[side] > 0.001 and (previewing or selected == zone):
+                    self.draw_pad(context, side, zone, self.fade[side])
+                if self.config.get("centerDotEnabled") and zone != "floating":
+                    self.draw_center(context, side, zone)
+
+
+if __name__ == "__main__":
+    TrackpadOverlay().run(None)
