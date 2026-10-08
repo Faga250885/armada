@@ -119,6 +119,50 @@ export interface RgbConfig {
   saturation: number;
 }
 
+export interface VirtualTrackpadsConfig {
+  supported: boolean;
+  enabled: boolean;
+    blockTouchscreen: boolean;
+    gameModeOnly: boolean;
+  leftEnabled: boolean;
+  rightEnabled: boolean;
+  mode: "simple" | "corners" | "floating" | "halves";
+  tapToClick: boolean;
+  limitToBounds: boolean;
+  deckLikeSize: boolean;
+  leftSize: number;
+  rightSize: number;
+  edgeGap: number;
+  hapticStrength: number;
+    borderOpacity: number;
+    borderWidth: number;
+    backgroundStyle: "dots" | "solid" | "none";
+    backgroundOpacity: number;
+    autoHide: boolean;
+    hideDelay: number;
+  borderRadius: number;
+  dotSize: number;
+  dotGap: number;
+  centerDotEnabled: boolean;
+  centerDotSize: number;
+  centerDotOpacity: number;
+}
+
+export interface VirtualTrackpadsState {
+  leftActive: boolean;
+  rightActive: boolean;
+  leftZone: "top" | "bottom" | "floating" | "half";
+  rightZone: "top" | "bottom" | "floating" | "half";
+  leftX: number;
+  leftY: number;
+  rightX: number;
+  rightY: number;
+  leftTouchX: number;
+  leftTouchY: number;
+  rightTouchX: number;
+  rightTouchY: number;
+}
+
 export interface GameRef {
   appid: string;
   name: string;
@@ -162,6 +206,7 @@ export interface Config {
   sleepModes: DropdownChoice[];
   controllerType: string;
   controllerTypes: DropdownChoice[];
+  virtualTrackpads: VirtualTrackpadsConfig;
   calibration?: CalibrationState;
   game?: GameRef | null;
   selectedGame?: GameRef | null;

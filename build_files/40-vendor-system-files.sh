@@ -97,11 +97,13 @@ systemctl enable armada-installer-visibility.service
 systemctl enable armada-steamapps.service
 systemctl enable armada-powerd.service
 systemctl enable armada-control.service
+systemctl enable armada-virtual-trackpads.service
 systemctl enable steamos-manager.service
 systemctl --global enable steamos-manager.service
 systemctl --global enable steamos-manager-session-cleanup.service
 systemctl --global enable armada-steam-default-session.service
 systemctl --global enable armada-steam-charging-eta.service
+systemctl --global enable armada-virtual-trackpads-overlay.service
 systemctl enable armada-bootimg-sync.service
 systemctl enable armada-esp-rename.service
 systemctl enable armada-boot-hotkeys.service

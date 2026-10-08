@@ -11,3 +11,9 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
 - `patches/0003-feat-Hardware-Support-Add-AYN-Thor-Lite.patch`
   source: https://github.com/ShadowBlip/InputPlumber/pull/746
   notes: AYN Thor Lite support
+- `patches/0004-add-dbus-touch-events.patch`
+  source: armada
+  notes: Adds a polkit-protected D-Bus method for injecting normalized multitouch values into Steam Deck touchpad targets.
+- `patches/0005-native-virtual-trackpad-haptics.patch`
+  source: armada
+  notes: Uses Steam's native trackpad pulse timing with configurable amplitude and short finite effects while the virtual-pad service holds a live lease. Zero suppresses trackpad pulses without stopping game rumble, which has priority in the shared effect slot. Includes six package tests for scaling, fade, mute, game-rumble priority and lease expiry.

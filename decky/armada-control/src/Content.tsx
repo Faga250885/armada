@@ -13,6 +13,7 @@ import { Compatibility } from "./tabs/Compatibility";
 import { Fans } from "./tabs/Fans";
 import { Power } from "./tabs/Power";
 import { Settings } from "./tabs/Settings";
+import { Trackpads } from "./tabs/Trackpads";
 import type { Config } from "./types";
 
 export function Content() {
@@ -85,21 +86,24 @@ export function Content() {
     <div className="armada-control-tab-content">{content}</div>
   );
   return (
-    <div className="armada-control-tabs">
-      <style>{styles}</style>
-      <Tabs
-        activeTab={tab}
-        onShowTab={setTab}
-        tabs={[
-          { id: "Compatibility", title: tabIcons.Compatibility, content: tabContent(<Compatibility config={config} setConfig={setConfig} />) },
-          { id: "Power", title: tabIcons.Power, content: tabContent(<Power config={config} setConfig={setConfig} />) },
-          { id: "Fans", title: tabIcons.Fans, content: tabContent(<Fans setConfig={setConfig} />) },
-          ...(config.rgbSupported ? [
-            { id: "RGB", title: tabIcons.RGB, content: tabContent(<RgbLighting />) },
-          ] : []),
-          { id: "Advanced", title: tabIcons.Advanced, content: tabContent(<Settings config={config} setConfig={setConfig} />) },
-        ]}
-      />
-    </div>
+    <>
+      <div className="armada-control-tabs">
+        <style>{styles}</style>
+        <Tabs
+          activeTab={tab}
+          onShowTab={setTab}
+          tabs={[
+            { id: "Compatibility", title: tabIcons.Compatibility, content: tabContent(<Compatibility config={config} setConfig={setConfig} />) },
+            { id: "Power", title: tabIcons.Power, content: tabContent(<Power config={config} setConfig={setConfig} />) },
+            { id: "Fans", title: tabIcons.Fans, content: tabContent(<Fans setConfig={setConfig} />) },
+            ...(config.rgbSupported ? [
+              { id: "RGB", title: tabIcons.RGB, content: tabContent(<RgbLighting />) },
+            ] : []),
+            { id: "Trackpads", title: tabIcons.Trackpads, content: tabContent(<Trackpads config={config} setConfig={setConfig} />) },
+            { id: "Advanced", title: tabIcons.Advanced, content: tabContent(<Settings config={config} setConfig={setConfig} />) },
+          ]}
+        />
+      </div>
+    </>
   );
 }
