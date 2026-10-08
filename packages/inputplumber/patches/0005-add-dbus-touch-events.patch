@@ -1,14 +1,3 @@
-From: Armada OS <armada@example.invalid>
-Subject: [PATCH] dbus: add normalized touch event injection
-
-Expose InputValue::Touch over the composite-device D-Bus API so trusted
-system helpers can drive Steam Deck touchpad targets from a touchscreen.
-The existing SendEvent authorization is intentionally reused.
----
- bindings/dbus-xml/org.shadowblip.Input.CompositeDevice.xml |  8 ++++
- src/dbus/interface/composite_device.rs                     | 46 ++++++++++++++++++++++-
- 2 files changed, 54 insertions(+), 1 deletion(-)
-
 diff --git a/bindings/dbus-xml/org.shadowblip.Input.CompositeDevice.xml b/bindings/dbus-xml/org.shadowblip.Input.CompositeDevice.xml
 index 051d09e..3850655 100644
 --- a/bindings/dbus-xml/org.shadowblip.Input.CompositeDevice.xml
@@ -29,21 +18,21 @@ index 051d09e..3850655 100644
        <arg name="events" type="as" direction="in"/>
      </method>
 diff --git a/src/dbus/interface/composite_device.rs b/src/dbus/interface/composite_device.rs
-index e3db7ac..7947de9 100644
+index e3db7ac..b0734e9 100644
 --- a/src/dbus/interface/composite_device.rs
 +++ b/src/dbus/interface/composite_device.rs
-@@ -281,11 +281,56 @@ impl CompositeDeviceInterface {
+@@ -281,12 +281,57 @@ impl CompositeDeviceInterface {
          let event = NativeEvent::new(cap, val);
-
+ 
          self.composite_device
 -            .blocking_write_send_event(event)
 +            .write_send_event(event)
 +            .await
              .map_err(|e| fdo::Error::Failed(e.to_string()))?;
-
+ 
          Ok(())
      }
-
+ 
 +    /// Directly write a normalized multi-touch event to the target devices.
 +    async fn send_touch_event(
 +        &self,
@@ -91,5 +80,3 @@ index e3db7ac..7947de9 100644
      /// Directly write to the composite device's target devices with the given button event list
      async fn send_button_chord(
          &self,
---
-2.51.0
