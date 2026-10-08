@@ -20,6 +20,10 @@ const localeModuleUrls = Object.fromEntries(await Promise.all(
     await compileModule(`../src/locales/${locale}.ts`),
   ]),
 ));
+const esSource = await readFile(new URL("../src/locales/es.ts", import.meta.url), "utf8");
+let esOutput = ts.transpileModule(esSource, { compilerOptions, fileName: "es.ts" }).outputText;
+esOutput = esOutput.replace('from "./en"', `from "${localeModuleUrls["./locales/en"]}"`);
+localeModuleUrls["./locales/es"] = `data:text/javascript;base64,${Buffer.from(esOutput).toString("base64")}`;
 const i18nSource = await readFile(new URL("../src/i18n.ts", import.meta.url), "utf8");
 let i18nOutput = ts.transpileModule(i18nSource, { compilerOptions, fileName: "i18n.ts" }).outputText;
 for (const [modulePath, moduleUrl] of Object.entries(localeModuleUrls)) {
@@ -34,7 +38,7 @@ const {
   translateLabelForLocale,
 } = await import(moduleUrl);
 
-for (const locale of ["zh-CN", "pt-BR", "pt-PT"]) {
+for (const locale of ["zh-CN", "pt-BR", "pt-PT", "es"]) {
   assert.deepEqual(Object.keys(localeStrings[locale]), Object.keys(localeStrings.en));
 }
 
@@ -46,6 +50,9 @@ assert.equal(localeFromLanguage("pt_BR"), "pt-BR");
 assert.equal(localeFromLanguage("brazilian"), "pt-BR");
 assert.equal(localeFromLanguage("pt"), "pt-PT");
 assert.equal(localeFromLanguage("portuguese"), "pt-PT");
+assert.equal(localeFromLanguage("spanish"), "es");
+assert.equal(localeFromLanguage("es_419"), "es");
+assert.equal(localeFromLanguage("latam"), "es");
 assert.equal(localeFromLanguage("tchinese"), "en");
 assert.equal(localeFromLanguage(""), null);
 
@@ -55,6 +62,7 @@ assert.equal(resolveLocale({ deckyLocales: ["zh-cn"], browserLanguages: ["en-US"
 assert.equal(resolveLocale({ browserLanguages: ["zh-CN", "en-US"] }), "zh-CN");
 assert.equal(resolveLocale({ steamLanguage: "brazilian", deckyLocales: ["pt-PT"] }), "pt-BR");
 assert.equal(resolveLocale({ browserLanguages: ["pt-PT", "en-US"] }), "pt-PT");
+assert.equal(resolveLocale({ steamLanguage: "spanish", browserLanguages: ["en-US"] }), "es");
 assert.equal(resolveLocale({}), "en");
 
 assert.equal(translate("en", "power.cpuGovernor"), "CPU Governor");
@@ -62,6 +70,8 @@ assert.equal(translate("zh-CN", "power.cpuGovernor"), "CPU 调频策略");
 assert.equal(translate("zh-CN", "games.appFallback", { id: 123 }), "应用 123");
 assert.equal(translate("pt-BR", "common.loading"), "Carregando");
 assert.equal(translate("pt-PT", "common.loading"), "A carregar");
+assert.equal(translate("es", "trackpads.modeFloating"), "Dinámicos al toque");
+assert.equal(translate("es", "trackpads.modeHalves"), "Pantalla dividida");
 assert.equal(translateLabelForLocale("en", "Balanced"), "Balanced");
 assert.equal(translateLabelForLocale("zh-CN", "Balanced"), "均衡");
 assert.equal(translateLabelForLocale("zh-CN", "Big Cores (4-7)"), "大核心 (4-7)");
