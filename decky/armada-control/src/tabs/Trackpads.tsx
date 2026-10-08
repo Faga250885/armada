@@ -1,5 +1,5 @@
 import { toaster } from "@decky/api";
-import { Field, PanelSectionRow } from "@decky/ui";
+import { Field, PanelSection, PanelSectionRow } from "@decky/ui";
 import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { setVirtualTrackpads } from "../backend";
@@ -83,7 +83,7 @@ export function Trackpads({ config, setConfig }: {
   const centerDotDisabled = visualDisabled || pads.mode === "floating";
   return (
     <div className="armada-trackpads-tab">
-      <div className="armada-subheader">{t("trackpads.title")}</div>
+      <PanelSection title={t("trackpads.title")}>
         <ToggleRow
           label={t("trackpads.master")}
           description={t("trackpads.masterDescription")}
@@ -117,7 +117,8 @@ export function Trackpads({ config, setConfig }: {
         />
         <div className="armada-trackpads-note">{modeDescription}</div>
         {splitScreen && <div className="armada-trackpads-note">{t("trackpads.halvesInvisible")}</div>}
-      <div className="armada-subheader">{t("trackpads.zones")}</div>
+      </PanelSection>
+      <PanelSection title={t("trackpads.zones")}>
         <ToggleRow
           label={t("trackpads.left")}
           description={!deckControllerSelected ? t("trackpads.selectDeckFirst") : undefined}
@@ -157,7 +158,8 @@ export function Trackpads({ config, setConfig }: {
           disabled={controlsDisabled || pads.mode === "floating"}
           onChange={(edgeGap) => update({ edgeGap })}
         />
-      <div className="armada-subheader">{t("trackpads.feedback")}</div>
+      </PanelSection>
+      <PanelSection title={t("trackpads.feedback")}>
         <ToggleRow
           label={t("trackpads.limitToBounds")}
           description={t("trackpads.limitToBoundsDescription")}
@@ -174,7 +176,8 @@ export function Trackpads({ config, setConfig }: {
           disabled={controlsDisabled}
           onChange={(hapticStrength) => update({ hapticStrength })}
         />
-      <div className="armada-subheader">{t("trackpads.appearance")}</div>
+      </PanelSection>
+      <PanelSection title={t("trackpads.appearance")}>
         <SliderEdit
           label={t("trackpads.borderOpacity")}
           value={pads.borderOpacity}
@@ -232,7 +235,8 @@ export function Trackpads({ config, setConfig }: {
           disabled={visualDisabled}
           onChange={(dotColor) => update({ dotColor })}
         />
-      <div className="armada-subheader">{t("trackpads.centerIndicator")}</div>
+      </PanelSection>
+      <PanelSection title={t("trackpads.centerIndicator")}>
         <ToggleRow
           label={t("trackpads.centerDot")}
           description={t("trackpads.centerDotDescription")}
@@ -266,6 +270,7 @@ export function Trackpads({ config, setConfig }: {
         />
         <div className="armada-trackpads-note">{t("trackpads.touchscreenNotice")}</div>
         <div className="armada-trackpads-note">{t("trackpads.deckTargetNotice")}</div>
+      </PanelSection>
     </div>
   );
 }
