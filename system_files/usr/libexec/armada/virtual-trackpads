@@ -26,11 +26,12 @@ from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, clamp
 
 CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
 STATE_PATH = Path("/run/armada/virtual-trackpads-state.json")
+HAPTICS_OWNER_PATH = Path("/run/armada/virtual-trackpads-haptics-owner.json")
+HAPTICS_NATIVE_PATH = Path("/run/armada/virtual-trackpads-native-haptics")
 DEVICE_ENV = os.environ.get("ARMADA_DEVICE_ENV", "/usr/libexec/armada/device-env")
 INPUTPLUMBER_SERVICE = "org.shadowblip.InputPlumber"
 INPUTPLUMBER_ROOT = "/org/shadowblip/InputPlumber"
 COMPOSITE_IFACE = "org.shadowblip.Input.CompositeDevice"
-FF_IFACE = "org.shadowblip.Output.ForceFeedback"
 
 EV_SYN = 0
 EV_ABS = 3
@@ -160,13 +161,6 @@ class InputPlumber:
             ),
         )
 
-    def rumble(self, strength):
-        self.call(FF_IFACE, "Rumble", GLib.Variant("(d)", (clamp(strength),)))
-
-    def stop_rumble(self):
-        self.call(FF_IFACE, "Stop", None)
-
-
 class MouseClickSink:
     """Reliable tap-to-click output independent of Steam's active layout."""
 
@@ -226,11 +220,11 @@ class VirtualTrackpads:
         self.dirty_slots = set()
         self.running = True
         self.reload_requested = False
-        self.rumble_stop_at = 0.0
-        self.rumble_active = False
-        self.last_haptic = 0.0
+        self.haptics_token = None
+        self.haptics_lease_at = 0.0
+        self.haptics_native_check_at = 0.0
+        self.native_haptics = False
         self.press_releases = {}
-        self.inertia_haptics = {}
         self.write_state()
 
     def write_state(self, force=True):
@@ -259,10 +253,12 @@ class VirtualTrackpads:
         os.replace(temporary, STATE_PATH)
 
     def close_device(self):
-        self.inertia_haptics.clear()
+        self.haptics_token = None
+        self.native_haptics = False
+        self.haptics_lease_at = 0.0
         try:
-            self.stop_haptics()
-        except Exception:
+            HAPTICS_OWNER_PATH.unlink(missing_ok=True)
+        except OSError:
             pass
         if self.fd is not None:
             try:
@@ -304,15 +300,13 @@ class VirtualTrackpads:
             os.close(fd)
             raise
         self.fd = fd
+        self.refresh_haptics_owner(force=True)
 
     def reload(self):
         previous_active = self.config["blockTouchscreen"] or (
             self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
         )
         self.config = load_config(device_values=self.device_env)
-        if self.config["hapticStrength"] <= 0:
-            self.inertia_haptics.clear()
-            self.stop_haptics(force=True)
         active = self.config["blockTouchscreen"] or (
             self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
         )
@@ -325,41 +319,41 @@ class VirtualTrackpads:
         minimum, maximum = bounds
         return clamp((value - minimum) / (maximum - minimum))
 
-    def haptic(self, multiplier=1.0, duration_scale=1.0):
-        configured = self.config["hapticStrength"] / 100.0
-        if configured <= 0:
-            self.inertia_haptics.clear()
-            self.stop_haptics()
-            return
-        # Low settings need a steeper curve because the RP6 actuator has a
-        # noticeable minimum response. Pulse duration still scales as a
-        # second, perceptible dimension.
-        strength = (configured ** 1.7) * clamp(multiplier)
+    def refresh_haptics_owner(self, force=False):
+        """Lease native Steam haptics to the virtual-pad strength control."""
         now = time.monotonic()
-        # Some handheld motors quantize low amplitudes heavily.  Vary both
-        # amplitude and pulse length so the full 0-100 setting remains useful.
-        minimum_interval = 0.025 + (1.0 - configured) * 0.035
-        if strength <= 0 or now - self.last_haptic < minimum_interval:
+        if self.fd is None or not self.config["enabled"] or self.config["blockTouchscreen"]:
             return
+        if not force and now - self.haptics_lease_at < 0.75:
+            return
+        if self.haptics_token is None:
+            self.haptics_token = f"{os.getpid()}-{time.monotonic_ns()}"
+        owner = {"token": self.haptics_token, "strength": self.config["hapticStrength"]}
         try:
-            self.ip.rumble(strength)
-            self.rumble_active = True
-            duration = (0.004 + (configured ** 1.35) * 0.028) * clamp(
-                duration_scale, 0.25, 1.0
-            )
-            self.rumble_stop_at = now + duration
-            self.last_haptic = now
-        except Exception:
-            pass
+            temporary = HAPTICS_OWNER_PATH.with_suffix(".tmp")
+            temporary.write_text(json.dumps(owner), encoding="utf-8")
+            os.replace(temporary, HAPTICS_OWNER_PATH)
+            self.haptics_lease_at = now
+        except OSError as error:
+            print(f"virtual-trackpads: haptic ownership unavailable: {error}", flush=True)
 
-    def stop_haptics(self, force=False):
-        self.rumble_stop_at = 0.0
-        if not force and not self.rumble_active:
-            return
+    def using_native_haptics(self):
+        """Report the native channel; this is diagnostic, not motor arbitration."""
+        if self.native_haptics:
+            return True
+        now = time.monotonic()
+        if self.haptics_token is None or now - self.haptics_native_check_at < 0.25:
+            return False
+        self.haptics_native_check_at = now
         try:
-            self.ip.stop_rumble()
-        finally:
-            self.rumble_active = False
+            acknowledged = HAPTICS_NATIVE_PATH.read_text(encoding="utf-8").strip()
+        except OSError:
+            return False
+        if acknowledged != self.haptics_token:
+            return False
+        self.native_haptics = True
+        print("virtual-trackpads: following Steam's native haptic timing", flush=True)
+        return True
 
     def release_press(self, side):
         pending = self.press_releases.pop(side, None)
@@ -398,17 +392,12 @@ class VirtualTrackpads:
             if side in self.press_releases:
                 self.release_press(side)
             self.pad_slots[slot] = (side, zone, x, y)
-            self.inertia_haptics.pop(side, None)
             self.last_zones[side] = zone
             self.last_positions[side] = (x, y)
             self.last_touches[side] = (local_x, local_y)
             point["started"] = time.monotonic()
             point["origin"] = (local_x, local_y)
-            point["velocity"] = (0.0, 0.0)
-            point["motionAt"] = time.monotonic()
-            point["hapticTravel"] = 0.0
             self.write_state()
-            self.haptic()
         else:
             side, zone, anchor_x, anchor_y = assignment
             inside = point_in_trackpad_bounds(
@@ -431,38 +420,11 @@ class VirtualTrackpads:
                 )
                 point["origin"] = resumed_coordinates
                 point["sent"] = resumed_coordinates
-                point["velocity"] = (0.0, 0.0)
-                point["motionAt"] = time.monotonic()
-                point["hapticTravel"] = 0.0
                 point["started"] = time.monotonic()
                 self.write_state()
-                self.haptic()
             local_x, local_y = trackpad_coordinates(
                 x, y, side, zone, self.config, anchor_x, anchor_y
             )
-            old = point.get("sent")
-            now = time.monotonic()
-            previous_motion_at = point.get("motionAt")
-            motion_distance = 0.0
-            if old is not None and previous_motion_at is not None:
-                elapsed = max(0.001, now - previous_motion_at)
-                motion_distance = ((local_x - old[0]) ** 2 + (local_y - old[1]) ** 2) ** 0.5
-                instant_x = (local_x - old[0]) / elapsed
-                instant_y = (local_y - old[1]) / elapsed
-                old_velocity = point.get("velocity", (0.0, 0.0))
-                point["velocity"] = (
-                    old_velocity[0] * 0.45 + instant_x * 0.55,
-                    old_velocity[1] * 0.45 + instant_y * 0.55,
-                )
-            point["motionAt"] = now
-            velocity_x, velocity_y = point.get("velocity", (0.0, 0.0))
-            speed = (velocity_x * velocity_x + velocity_y * velocity_y) ** 0.5
-            speed_amount = clamp(speed / 3.5)
-            point["hapticTravel"] = point.get("hapticTravel", 0.0) + motion_distance
-            pulse_distance = 0.055 - speed_amount * 0.035
-            if point["hapticTravel"] >= pulse_distance:
-                point["hapticTravel"] %= pulse_distance
-                self.haptic(0.18 + speed_amount * 0.82)
         self.ip.touch(side, slot % 256, True, local_x, local_y)
         point["sent"] = (local_x, local_y)
         self.last_touches[side] = (local_x, local_y)
@@ -509,16 +471,6 @@ class VirtualTrackpads:
                         pass
                 if not was_suspended and not click_started:
                     self.ip.touch(side, slot % 256, False, x, y)
-                velocity_x, velocity_y = point.get("velocity", (0.0, 0.0))
-                speed = (velocity_x * velocity_x + velocity_y * velocity_y) ** 0.5
-                motion_age = time.monotonic() - point.get("motionAt", 0.0)
-                if not was_suspended and motion_age <= 0.12 and speed >= 0.35:
-                    amount = clamp(speed / 4.0, 0.12, 1.0)
-                    self.inertia_haptics[side] = {
-                        "amount": amount,
-                        "next": time.monotonic() + 0.035,
-                        "deadline": time.monotonic() + 0.34,
-                    }
             finally:
                 self.write_state()
 
@@ -528,20 +480,6 @@ class VirtualTrackpads:
             if now < pending["deadline"]:
                 continue
             self.release_press(side)
-
-    def pulse_inertia_haptics(self):
-        now = time.monotonic()
-        for side, inertia in list(self.inertia_haptics.items()):
-            if now < inertia["next"]:
-                continue
-            amount = inertia["amount"]
-            if now >= inertia["deadline"] or amount < 0.08:
-                self.inertia_haptics.pop(side, None)
-                continue
-            self.haptic(amount, duration_scale=0.35 + amount * 0.65)
-            amount *= 0.70
-            inertia["amount"] = amount
-            inertia["next"] = now + 0.035 + (1.0 - amount) * 0.045
 
     def process(self, data):
         for offset in range(0, len(data) - INPUT_EVENT.size + 1, INPUT_EVENT.size):
@@ -575,30 +513,19 @@ class VirtualTrackpads:
                     self.reload()
                 except Exception as error:
                     print(f"virtual-trackpads: reload failed: {error}", flush=True)
+            self.refresh_haptics_owner()
+            self.using_native_haptics()
             timeout = 0.2
-            if self.rumble_stop_at:
-                timeout = max(0.0, min(timeout, self.rumble_stop_at - time.monotonic()))
             if self.press_releases:
                 timeout = max(0.0, min(
                     timeout,
                     min(item["deadline"] for item in self.press_releases.values()) - time.monotonic(),
                 ))
-            if self.inertia_haptics:
-                timeout = max(0.0, min(timeout, min(item["next"] for item in self.inertia_haptics.values()) - time.monotonic()))
             readable, _, _ = select.select([self.fd] if self.fd is not None else [], [], [], timeout)
             try:
                 self.release_presses()
             except Exception:
                 pass
-            try:
-                self.pulse_inertia_haptics()
-            except Exception:
-                pass
-            if self.rumble_stop_at and time.monotonic() >= self.rumble_stop_at:
-                try:
-                    self.stop_haptics()
-                except Exception:
-                    pass
             if readable:
                 try:
                     self.process(os.read(self.fd, INPUT_EVENT.size * 64))
@@ -631,10 +558,6 @@ def main():
     finally:
         daemon.close_device()
         daemon.mouse_click.close()
-        try:
-            daemon.stop_haptics()
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":

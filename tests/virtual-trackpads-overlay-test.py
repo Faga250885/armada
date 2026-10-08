@@ -173,12 +173,12 @@ def render_worker(directory):
     phase_started = started
     last_frames = 0
     pixels = {}
+    paintable = None
 
     def alpha_pixels(label):
         # Render the widget's real GTK render node, rather than calling the
         # Python draw function directly (which would miss callback failures).
         snapshot = Gtk.Snapshot()
-        paintable = Gtk.WidgetPaintable.new(app.window)
         paintable.snapshot(snapshot, app.width, app.height)
         node = snapshot.to_node()
         image_path = directory / f"{label}.png"
@@ -204,11 +204,20 @@ def render_worker(directory):
         return visible
 
     def check():
-        nonlocal phase, phase_started, last_frames
+        nonlocal phase, phase_started, last_frames, paintable
         now = time.monotonic()
         try:
             assert now - started < 12, "Overlay did not complete rendering phases"
             if app.window is None or not app.window.get_mapped():
+                return GLib.SOURCE_CONTINUE
+            if paintable is None:
+                # Keep this observer alive across GTK frames. Constructing a
+                # fresh paintable during queue_draw can capture a temporarily
+                # invalidated (NULL) widget render node instead of the last
+                # completed frame. Its asynchronous image updates remove that
+                # race while still exercising the real GTK render pipeline.
+                paintable = Gtk.WidgetPaintable.new(app.window)
+                phase_started = now
                 return GLib.SOURCE_CONTINUE
             if phase == 0 and now - phase_started >= 0.65:
                 assert len(drawn) >= 2, "GTK never invoked the Cairo draw callback"
