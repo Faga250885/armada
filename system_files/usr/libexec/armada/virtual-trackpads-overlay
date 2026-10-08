@@ -66,6 +66,17 @@ def white(opacity):
     return 1.0, 1.0, 1.0, clamp(opacity, 0.0, 50.0) / 100.0
 
 
+def shortcut_label(enabled, locale=None):
+    language = (locale or os.environ.get("LANG", "en")).lower().split("_")[0]
+    labels = {
+        "es": ("Trackpads activados", "Táctil normal"),
+        "pt": ("Trackpads ativados", "Toque normal"),
+        "zh": ("触控板已开启", "正常触控"),
+    }
+    on, off = labels.get(language, ("Trackpads on", "Normal touch"))
+    return on if enabled else off
+
+
 def rounded_rectangle(context, x, y, width, height, radius):
     radius = min(radius, width / 2.0, height / 2.0)
     context.new_sub_path()
@@ -230,7 +241,8 @@ class TrackpadOverlay(Gtk.Application):
                 self.fade[side] = max(target, self.fade[side] - speed)
             anything_visible |= self.fade[side] > 0.001
         center_visible = enabled and bool(self.config.get("centerDotEnabled")) and self.config.get("mode") != "floating"
-        has_visual = anything_visible or center_visible or previewing
+        notice_visible = time.time() < float(self.state.get("shortcutNoticeUntil", 0))
+        has_visual = anything_visible or center_visible or previewing or notice_visible
         # Queue one final transparent frame after the fade reaches zero so an
         # old pad image cannot remain in Gamescope's dedicated overlay plane.
         if self.area is not None and (has_visual or self.had_visual):
@@ -308,6 +320,17 @@ class TrackpadOverlay(Gtk.Application):
         if not self.reported_frame:
             print("virtual-trackpads-overlay: first GTK/Cairo frame rendered", flush=True)
             self.reported_frame = True
+        if time.time() < float(self.state.get("shortcutNoticeUntil", 0)):
+            label = shortcut_label(bool(self.state.get("shortcutNoticeEnabled")))
+            context.save()
+            context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+            context.set_font_size(max(16, min(self.width, self.height) * 0.028))
+            metrics = context.text_extents(label)
+            context.set_source_rgba(1, 1, 1, 0.5)
+            context.move_to((self.width - metrics.width) / 2 - metrics.x_bearing,
+                            self.height * 0.11)
+            context.show_text(label)
+            context.restore()
         if not self.config.get("enabled") or self.config.get("mode") == "halves":
             return
         previewing = time.monotonic() < self.preview_until

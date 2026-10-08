@@ -1,8 +1,8 @@
 import { toaster } from "@decky/api";
-import { Field, PanelSection } from "@decky/ui";
-import { useEffect, useRef } from "react";
+import { ButtonItem, Field, PanelSection } from "@decky/ui";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { setVirtualTrackpads } from "../backend";
+import { getVirtualTrackpads, resetVirtualTrackpads, setVirtualTrackpads } from "../backend";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import { t } from "../i18n";
 import type { Config, VirtualTrackpadsConfig } from "../types";
@@ -15,10 +15,35 @@ export function Trackpads({ config, setConfig }: {
 }) {
   const timer = useRef<number | null>(null);
   const request = useRef(Promise.resolve());
+  const pendingSaves = useRef(0);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      if (timer.current !== null || pendingSaves.current > 0) return;
+      try {
+        const latest = await getVirtualTrackpads();
+        if (!cancelled && timer.current === null && pendingSaves.current === 0) {
+          setConfig((current) => {
+            if (!current || (
+              current.virtualTrackpads.enabled === latest.enabled &&
+              current.virtualTrackpads.blockTouchscreen === latest.blockTouchscreen &&
+              current.virtualTrackpads.leftEnabled === latest.leftEnabled &&
+              current.virtualTrackpads.rightEnabled === latest.rightEnabled
+            )) return current;
+            return { ...current, virtualTrackpads: { ...current.virtualTrackpads, ...latest } };
+          });
+        }
+      } catch (_) { /* Keep the last known settings if the service is unavailable. */ }
+    };
+    const interval = window.setInterval(refresh, 1500);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [setConfig]);
 
   const update = (change: Partial<EditableTrackpads>, immediate = false) => {
     const next = { ...config.virtualTrackpads, ...change };
@@ -26,7 +51,9 @@ export function Trackpads({ config, setConfig }: {
     window.dispatchEvent(new Event("armada-trackpads-preview"));
     if (timer.current !== null) window.clearTimeout(timer.current);
     const save = () => {
+      timer.current = null;
       const { supported: _supported, ...payload } = next;
+      pendingSaves.current += 1;
       request.current = request.current
         .catch(() => {})
         .then(async () => {
@@ -40,9 +67,39 @@ export function Trackpads({ config, setConfig }: {
         })
         .catch((error) => {
           toaster.toast({ title: t("trackpads.saveError"), body: String(error) });
-        });
+        })
+        .finally(() => { pendingSaves.current -= 1; });
     };
     timer.current = window.setTimeout(save, immediate ? 0 : 300);
+  };
+
+  const resetDefaults = () => {
+    if (resetting) return;
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    setResetting(true);
+    pendingSaves.current += 1;
+    request.current = request.current
+      .catch(() => {})
+      .then(async () => {
+        const applied = await resetVirtualTrackpads();
+        const { controllerType, ...trackpads } = applied;
+        setConfig((current) => current ? {
+          ...current,
+          controllerType: controllerType || current.controllerType,
+          virtualTrackpads: { ...current.virtualTrackpads, ...trackpads, supported: true },
+        } : current);
+        window.dispatchEvent(new Event("armada-trackpads-preview"));
+      })
+      .catch((error) => {
+        toaster.toast({ title: t("trackpads.saveError"), body: String(error) });
+      })
+      .finally(() => {
+        pendingSaves.current -= 1;
+        setResetting(false);
+      });
   };
 
   if (!config.virtualTrackpads.supported) {
@@ -122,7 +179,7 @@ export function Trackpads({ config, setConfig }: {
           label={t("trackpads.sharedSize")}
           value={pads.leftSize}
           min={15}
-          max={60}
+          max={80}
           step={1}
           disabled={controlsDisabled || pads.deckLikeSize}
           onChange={(size) => update({ leftSize: size, rightSize: size })}
@@ -270,6 +327,12 @@ export function Trackpads({ config, setConfig }: {
           disabled={centerDotDisabled || !pads.centerDotEnabled}
           onChange={(centerDotOpacity) => update({ centerDotOpacity })}
         />
+      </PanelSection>
+      <PanelSection>
+        <ButtonItem layout="below" onClick={resetDefaults} disabled={resetting}>
+          {t("trackpads.resetDefaults")}
+        </ButtonItem>
+        <div className="armada-trackpads-note">{t("trackpads.resetDefaultsDescription")}</div>
       </PanelSection>
     </div>
   );

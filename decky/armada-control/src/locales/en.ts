@@ -232,7 +232,7 @@ export const en = {
   "trackpads.backgroundSolid": "Solid",
   "trackpads.backgroundNone": "None",
   "trackpads.master": "Virtual Trackpads",
-  "trackpads.masterDescription": "Off restores normal touch.",
+  "trackpads.masterDescription": "Off restores touch. Hold L3 + R3 for 3 seconds to toggle.",
   "trackpads.mode": "Trackpad Mode",
   "trackpads.modeSimple": "Bottom Corners",
   "trackpads.modeCorners": "Four Corners",
@@ -280,6 +280,8 @@ export const en = {
   "trackpads.selectDeckFirst": "Select Steam Deck emulation above first.",
   "trackpads.unsupported": "Virtual trackpads are not supported on this device.",
   "trackpads.saveError": "Could not update virtual trackpads",
+  "trackpads.resetDefaults": "Restore Defaults",
+  "trackpads.resetDefaultsDescription": "Restores pad settings. Virtual trackpads stay off and normal touch stays on.",
 } as const;
 
 export type TranslationKey = keyof typeof en;

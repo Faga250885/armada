@@ -234,7 +234,7 @@ export const zhCN = {
   "trackpads.backgroundSolid": "纯色",
   "trackpads.backgroundNone": "无",
   "trackpads.master": "虚拟触控板",
-  "trackpads.masterDescription": "关闭后恢复普通触控。",
+  "trackpads.masterDescription": "关闭后恢复普通触控。长按 L3 + R3 三秒切换。",
   "trackpads.mode": "触控板模式",
   "trackpads.modeSimple": "底部两角",
   "trackpads.modeCorners": "四个角",
@@ -282,4 +282,6 @@ export const zhCN = {
   "trackpads.selectDeckFirst": "请先在上方选择 Steam Deck 模拟。",
   "trackpads.unsupported": "此设备不支持虚拟触控板。",
   "trackpads.saveError": "无法更新虚拟触控板",
+  "trackpads.resetDefaults": "恢复默认设置",
+  "trackpads.resetDefaultsDescription": "恢复触控板设置。虚拟触控板保持关闭，普通触屏保持开启。",
 } as const satisfies Record<TranslationKey, string>;

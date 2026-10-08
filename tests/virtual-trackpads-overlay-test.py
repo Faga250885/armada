@@ -277,6 +277,19 @@ def render_worker(directory):
             elif phase == 6 and now - phase_started >= 0.4:
                 pixels["none"] = alpha_pixels("none")
                 assert pixels["none"] == 0, pixels
+                config["enabled"] = False
+                state.update(shortcutNoticeUntil=time.time() + 0.9,
+                             shortcutNoticeEnabled=False)
+                config_path.write_text(json.dumps(config))
+                state_path.write_text(json.dumps(state))
+                phase, phase_started = 7, now
+            elif phase == 7 and now - phase_started >= 0.4:
+                pixels["shortcut"] = alpha_pixels("shortcut")
+                assert pixels["shortcut"] > 10, pixels
+                phase, phase_started = 8, now
+            elif phase == 8 and now - phase_started >= 1.0:
+                pixels["shortcut_faded"] = alpha_pixels("shortcut_faded")
+                assert pixels["shortcut_faded"] == 0, pixels
                 print(json.dumps({"draws": len(drawn), "alphaPixels": pixels}), flush=True)
                 app.quit()
                 return GLib.SOURCE_REMOVE
@@ -290,7 +303,7 @@ def render_worker(directory):
     app.run(None)
     if errors:
         raise errors[0]
-    assert phase == 6, f"Overlay exited prematurely at phase {phase}"
+    assert phase == 8, f"Overlay exited prematurely at phase {phase}"
 
 
 class OverlayRuntimeTests(unittest.TestCase):

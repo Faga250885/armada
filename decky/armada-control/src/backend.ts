@@ -32,6 +32,9 @@ export const restartGameMode = () => call<[], boolean>("restart_game_mode");
 export const setControllerType = (value: string) => call<[string], string>("set_controller_type", value);
 export const setVirtualTrackpads = (config: Omit<VirtualTrackpadsConfig, "supported">) =>
   call<[Omit<VirtualTrackpadsConfig, "supported">], VirtualTrackpadsConfig & { controllerType?: string }>("set_virtual_trackpads", config);
+export const resetVirtualTrackpads = () =>
+  call<[], VirtualTrackpadsConfig & { controllerType?: string }>("reset_virtual_trackpads");
+export const getVirtualTrackpads = () => call<[], VirtualTrackpadsConfig>("get_virtual_trackpads");
 export const getVirtualTrackpadsState = () => call<[], VirtualTrackpadsState>("get_virtual_trackpads_state");
 export const getRgb = () => call<[], RgbConfig | null>("get_rgb");
 export const setRgb = (

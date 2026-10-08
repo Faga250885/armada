@@ -560,6 +560,10 @@ def action_set_virtual_trackpads(request):
     return result
 
 
+def action_reset_virtual_trackpads(request):
+    return action_set_virtual_trackpads({"config": dict(VIRTUAL_TRACKPADS_DEFAULTS)})
+
+
 def action_get_virtual_trackpads_state(request):
     try:
         state = json.loads(VIRTUAL_TRACKPADS_STATE.read_text(encoding="utf-8"))
@@ -941,6 +945,7 @@ ACTIONS = {
     "set_swipe_gestures_enabled": action_set_swipe_gestures_enabled,
     "get_virtual_trackpads": action_get_virtual_trackpads,
     "set_virtual_trackpads": action_set_virtual_trackpads,
+    "reset_virtual_trackpads": action_reset_virtual_trackpads,
     "get_virtual_trackpads_state": action_get_virtual_trackpads_state,
     "set_controller_type": action_set_controller_type,
     "get_controller_type": action_get_controller_type,

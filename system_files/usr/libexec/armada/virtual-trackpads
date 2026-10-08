@@ -4,6 +4,7 @@
 import fcntl
 import json
 import os
+import pwd
 import select
 import signal
 import struct
@@ -15,13 +16,14 @@ from pathlib import Path
 from gi.repository import Gio, GLib
 
 try:
-    from evdev import UInput, ecodes
+    from evdev import InputDevice, UInput, ecodes
 except ImportError:
+    InputDevice = None
     UInput = None
     ecodes = None
 
 sys.path.insert(0, "/usr/lib/armada")
-from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, clamp, game_mode_active, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_coordinates, trackpad_zone_at
+from armada_virtual_trackpads import DEFAULT_CONFIG, ShortcutHold, apply_deck_like_size, clamp, game_mode_active, panel_aspect_ratio, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_coordinates, trackpad_zone_at
 
 
 CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
@@ -196,6 +198,7 @@ class VirtualTrackpads:
     def __init__(self):
         device_env = parse_device_env()
         self.device_env = device_env
+        self.aspect_ratio = panel_aspect_ratio(device_env)
         self.config = load_config(device_values=device_env)
         # A digitizer can already carry kernel transforms that differ from the
         # panel's scanout orientation.  Allow devices to describe that without
@@ -227,6 +230,12 @@ class VirtualTrackpads:
         self.press_releases = {}
         self.session_active = game_mode_active()
         self.last_session_check = 0.0
+        self.gamepads = {}
+        self.gamepad_pressed = {}
+        self.last_gamepad_scan = 0.0
+        self.shortcut = ShortcutHold(3.0)
+        self.shortcut_notice_until = 0.0
+        self.shortcut_notice_enabled = False
         self.write_state()
 
     def write_state(self, force=True):
@@ -249,6 +258,8 @@ class VirtualTrackpads:
             "rightTouchX": self.last_touches["right"][0],
             "rightTouchY": self.last_touches["right"][1],
             "updated": time.time(),
+            "shortcutNoticeUntil": self.shortcut_notice_until,
+            "shortcutNoticeEnabled": self.shortcut_notice_enabled,
         }
         temporary = STATE_PATH.with_suffix(".tmp")
         temporary.write_text(json.dumps(state, separators=(",", ":")), encoding="utf-8")
@@ -307,6 +318,116 @@ class VirtualTrackpads:
     def reload(self):
         self.config = load_config(device_values=self.device_env)
         self.sync_capture(force=True)
+
+    def scan_gamepads(self):
+        """Observe physical stick buttons without grabbing controller input."""
+        if InputDevice is None:
+            return
+        paths = {str(path) for path in Path("/dev/input").glob("event*")}
+        for path in list(self.gamepads):
+            if path not in paths:
+                self.drop_gamepad(path)
+        for path in sorted(paths - self.gamepads.keys()):
+            event_name = Path(path).name
+            try:
+                sysfs_path = (Path("/sys/class/input") / event_name / "device").resolve()
+                if "/virtual/" in str(sysfs_path):
+                    continue
+                device = InputDevice(path)
+                keys = device.capabilities().get(ecodes.EV_KEY, [])
+                if ecodes.BTN_THUMBL not in keys or ecodes.BTN_THUMBR not in keys:
+                    device.close()
+                    continue
+                self.gamepads[path] = device
+                self.gamepad_pressed[path] = set(device.active_keys())
+            except (OSError, ValueError):
+                continue
+        self.update_shortcut_buttons()
+
+    def drop_gamepad(self, path):
+        device = self.gamepads.pop(path, None)
+        self.gamepad_pressed.pop(path, None)
+        if device is not None:
+            device.close()
+        self.update_shortcut_buttons()
+
+    def update_shortcut_buttons(self):
+        pressed = set().union(*self.gamepad_pressed.values()) if self.gamepad_pressed else set()
+        self.shortcut.update(
+            ecodes is not None and ecodes.BTN_THUMBL in pressed,
+            ecodes is not None and ecodes.BTN_THUMBR in pressed,
+            time.monotonic(),
+        )
+
+    def process_gamepad(self, path):
+        try:
+            for event in self.gamepads[path].read():
+                if event.type != ecodes.EV_KEY or event.code not in (ecodes.BTN_THUMBL, ecodes.BTN_THUMBR):
+                    continue
+                if event.value:
+                    self.gamepad_pressed[path].add(event.code)
+                else:
+                    self.gamepad_pressed[path].discard(event.code)
+            self.update_shortcut_buttons()
+        except (OSError, BlockingIOError):
+            self.drop_gamepad(path)
+
+    def toggle_from_shortcut(self):
+        try:
+            current = sanitize_config(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            current = dict(DEFAULT_CONFIG)
+        next_enabled = not current["enabled"]
+        if next_enabled:
+            try:
+                controller = subprocess.check_output(
+                    ["/usr/libexec/armada/controller-type", "get"], text=True, timeout=2
+                ).strip()
+            except (OSError, subprocess.SubprocessError) as error:
+                print(f"virtual-trackpads: shortcut controller check failed: {error}", flush=True)
+                return
+            if controller != "deck-uhid":
+                print("virtual-trackpads: shortcut requires Steam Deck controller emulation", flush=True)
+                return
+            current["blockTouchscreen"] = False
+            if not (current["leftEnabled"] or current["rightEnabled"]):
+                current["leftEnabled"] = True
+                current["rightEnabled"] = True
+        current["enabled"] = next_enabled
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.{os.getpid()}.tmp")
+        try:
+            temporary.write_text(json.dumps(current, separators=(",", ":")) + "\n", encoding="utf-8")
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, CONFIG_PATH)
+            self.reload()
+        except (OSError, RuntimeError) as error:
+            temporary.unlink(missing_ok=True)
+            print(f"virtual-trackpads: shortcut toggle failed: {error}", flush=True)
+            return
+        self.shortcut_notice_enabled = next_enabled
+        self.shortcut_notice_until = time.time() + 1.6
+        self.write_state()
+        self.notify_shortcut(next_enabled)
+
+    def notify_shortcut(self, enabled):
+        """Desktop fallback; Game Mode paints its own brief overlay notice."""
+        if self.session_active or not Path("/usr/bin/notify-send").exists():
+            return
+        try:
+            session_user = os.environ.get("ARMADA_SESSION_USER", "armada")
+            uid = pwd.getpwnam(session_user).pw_uid
+            subprocess.Popen(
+                ["/usr/bin/runuser", "-u", session_user, "--", "/usr/bin/env",
+                 f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus",
+                 f"XDG_RUNTIME_DIR=/run/user/{uid}", "/usr/bin/notify-send",
+                 "--expire-time=1600", "Armada",
+                 "Trackpads on" if enabled else "Normal touch"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+        except (OSError, KeyError):
+            pass
 
     def should_capture(self):
         return should_capture_touch(self.config, self.session_active)
@@ -384,7 +505,7 @@ class VirtualTrackpads:
         )
         assignment = self.pad_slots.get(slot)
         if assignment is None:
-            match = trackpad_zone_at(x, y, self.config)
+            match = trackpad_zone_at(x, y, self.config, self.aspect_ratio)
             if match is None:
                 return
             side, zone, local_x, local_y = match
@@ -404,7 +525,7 @@ class VirtualTrackpads:
         else:
             side, zone, anchor_x, anchor_y = assignment
             inside = point_in_trackpad_bounds(
-                x, y, side, zone, self.config, anchor_x, anchor_y
+                x, y, side, zone, self.config, anchor_x, anchor_y, self.aspect_ratio
             )
             if self.config["limitToBounds"] and not inside:
                 if slot not in self.suspended_slots:
@@ -419,14 +540,14 @@ class VirtualTrackpads:
             if slot in self.suspended_slots:
                 self.suspended_slots.discard(slot)
                 resumed_coordinates = trackpad_coordinates(
-                    x, y, side, zone, self.config, anchor_x, anchor_y
+                    x, y, side, zone, self.config, anchor_x, anchor_y, self.aspect_ratio
                 )
                 point["origin"] = resumed_coordinates
                 point["sent"] = resumed_coordinates
                 point["started"] = time.monotonic()
                 self.write_state()
             local_x, local_y = trackpad_coordinates(
-                x, y, side, zone, self.config, anchor_x, anchor_y
+                x, y, side, zone, self.config, anchor_x, anchor_y, self.aspect_ratio
             )
         self.ip.touch(side, slot % 256, True, local_x, local_y)
         point["sent"] = (local_x, local_y)
@@ -511,6 +632,9 @@ class VirtualTrackpads:
         self.reload()
         while self.running:
             now = time.monotonic()
+            if now - self.last_gamepad_scan >= 3.0:
+                self.last_gamepad_scan = now
+                self.scan_gamepads()
             if now - self.last_session_check >= 0.5:
                 self.last_session_check = now
                 session_active = game_mode_active()
@@ -534,12 +658,25 @@ class VirtualTrackpads:
                     timeout,
                     min(item["deadline"] for item in self.press_releases.values()) - time.monotonic(),
                 ))
-            readable, _, _ = select.select([self.fd] if self.fd is not None else [], [], [], timeout)
+            inputs = list(self.gamepads.values())
+            if self.fd is not None:
+                inputs.append(self.fd)
+            try:
+                readable, _, _ = select.select(inputs, [], [], timeout)
+            except (OSError, ValueError):
+                for path in list(self.gamepads):
+                    self.drop_gamepad(path)
+                continue
             try:
                 self.release_presses()
             except Exception:
                 pass
-            if readable:
+            for path, device in list(self.gamepads.items()):
+                if device in readable:
+                    self.process_gamepad(path)
+            if self.shortcut.ready(time.monotonic()):
+                self.toggle_from_shortcut()
+            if self.fd is not None and self.fd in readable:
                 try:
                     self.process(os.read(self.fd, INPUT_EVENT.size * 64))
                 except BlockingIOError:
@@ -570,6 +707,8 @@ def main():
         daemon.run()
     finally:
         daemon.close_device()
+        for path in list(daemon.gamepads):
+            daemon.drop_gamepad(path)
         daemon.mouse_click.close()
 
 

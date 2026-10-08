@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHONPATH="$ROOT/system_files/usr/lib/armada" python3 - <<'PYEOF'
+ARMADA_TEST_ROOT="$ROOT" PYTHONPATH="$ROOT/system_files/usr/lib/armada" python3 - <<'PYEOF'
+import ast
 import os
 import socket
 import tempfile
@@ -10,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, game_mode_active, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_at, trackpad_coordinates
+from armada_virtual_trackpads import DEFAULT_CONFIG, ShortcutHold, apply_deck_like_size, game_mode_active, panel_aspect_ratio, physical_panel_height_mm, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_at, trackpad_coordinates
 
 config = sanitize_config({
     "enabled": True,
@@ -38,6 +39,26 @@ assert sanitize_config({"backgroundStyle": "none"})["backgroundStyle"] == "none"
 assert sanitize_config({"backgroundStyle": "bad"})["backgroundStyle"] == "dots"
 assert sanitize_config({"hideDelay": 99})["hideDelay"] == 5
 assert sanitize_config({"gameModeOnly": True})["gameModeOnly"] is True
+assert sanitize_config({})["enabled"] is False
+assert not should_capture_touch(sanitize_config({}), True)
+assert {key: DEFAULT_CONFIG[key] for key in (
+    "enabled", "blockTouchscreen", "gameModeOnly", "leftEnabled", "rightEnabled",
+    "mode", "deckLikeSize", "edgeGap", "limitToBounds", "hapticStrength",
+    "autoHide", "hideDelay", "borderWidth", "borderOpacity", "borderRadius",
+    "backgroundStyle", "dotSize", "dotGap", "backgroundOpacity", "centerDotEnabled",
+)} == {
+    "enabled": False, "blockTouchscreen": False, "gameModeOnly": True,
+    "leftEnabled": True, "rightEnabled": True, "mode": "simple",
+    "deckLikeSize": True, "edgeGap": 8, "limitToBounds": True,
+    "hapticStrength": 60, "autoHide": True, "hideDelay": 1,
+    "borderWidth": 2, "borderOpacity": 30, "borderRadius": 24,
+    "backgroundStyle": "dots", "dotSize": 1, "dotGap": 4,
+    "backgroundOpacity": 30, "centerDotEnabled": False,
+}
+fallback_source = Path(os.environ["ARMADA_TEST_ROOT"]) / "decky/armada-control/py_modules/armada_control/trackpads.py"
+fallback = next(ast.literal_eval(node.value) for node in ast.parse(fallback_source.read_text()).body
+                if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "DEFAULT" for target in node.targets))
+assert fallback == {"supported": False, **DEFAULT_CONFIG}
 only_game = sanitize_config({"enabled": True, "leftEnabled": True, "gameModeOnly": True})
 assert not should_capture_touch(only_game, False)
 assert should_capture_touch(only_game, True)
@@ -45,7 +66,7 @@ assert should_capture_touch({**only_game, "gameModeOnly": False}, False)
 assert not should_capture_touch({**only_game, "enabled": False, "blockTouchscreen": True}, False)
 assert should_capture_touch({**only_game, "enabled": False, "blockTouchscreen": True}, True)
 assert sanitize_config({"borderColor": "#ff0000"}).get("borderColor") is None
-assert sanitize_config({"leftEnabled": 1})["leftEnabled"] is False
+assert sanitize_config({"leftEnabled": 1})["leftEnabled"] is True
 assert sanitize_config({"enabled": False, "leftEnabled": True})["enabled"] is False
 assert sanitize_config({"leftEnabled": True})["enabled"] is True
 assert sanitize_config({"blockTouchscreen": True})["blockTouchscreen"] is True
@@ -70,6 +91,27 @@ deck_like = apply_deck_like_size(config, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68
 assert deck_like["leftSize"] == deck_like["rightSize"] == 47
 manual_size = apply_deck_like_size({**config, "deckLikeSize": False, "leftSize": 38, "rightSize": 38}, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"})
 assert manual_size["leftSize"] == manual_size["rightSize"] == 38
+with tempfile.TemporaryDirectory() as directory:
+    no_edid = Path(directory)
+    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "retroid-pocket-5"}, no_edid)["leftSize"] == 47
+    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "ayaneo-pocket-micro2"}, no_edid)["leftSize"] == 66
+    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "ayaneo-pocket-ds"}, no_edid)["leftSize"] == 37
+    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "retroid-pocket-mini-v2"}, no_edid)["leftSize"] > 45
+assert panel_aspect_ratio({"ARMADA_DEVICE_ID": "retroid-pocket-nova"}) == 4 / 3
+assert panel_aspect_ratio({"ARMADA_DEVICE_ID": "ayaneo-pocket-ace"}) == 3 / 2
+assert panel_aspect_ratio({"ARMADA_DEVICE_ID": "unknown"}) == 16 / 9
+assert physical_panel_height_mm({"ARMADA_DEVICE_ID": "retroid-pocket-6", "ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"}) == 68.5
+assert sanitize_config({"leftSize": 100})["leftSize"] == 80
+hold = ShortcutHold(3.0)
+hold.update(True, False, 0.0)
+assert not hold.ready(10.0)
+hold.update(True, True, 10.0)
+assert not hold.ready(12.99)
+assert hold.ready(13.0)
+assert not hold.ready(20.0)
+hold.update(False, True, 20.1)
+hold.update(True, True, 21.0)
+assert hold.ready(24.0)
 with tempfile.TemporaryDirectory() as directory:
     connector = Path(directory) / "card0-DSI-1"
     connector.mkdir()
@@ -107,6 +149,7 @@ assert bottom_right and bottom_right[:2] == ("right", "bottom")
 simple = {**config, "mode": "simple"}
 assert trackpad_zone_at(0.05, 0.1, simple) is None
 assert trackpad_zone_at(0.05, 0.9, simple)[:2] == ("left", "bottom")
+assert trackpad_zone_at(0.2, 0.9, {**simple, "leftSize": 66}, 3 / 2)[:2] == ("left", "bottom")
 assert trackpad_zone_at(0.05, 0.9, {**simple, "enabled": False}) is None
 
 floating = {**config, "mode": "floating"}
@@ -164,6 +207,14 @@ grep -Fq 'display_name = discover_gamescope_environment()' "$ROOT/system_files/u
 grep -Fq 'class MouseClickSink' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'ecodes.BTN_LEFT' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'self.mouse_click.click()' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+grep -Fq 'BTN_THUMBL' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+grep -Fq 'BTN_THUMBR' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+grep -Fq 'self.shortcut.ready(' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
+grep -Fq 'shortcutNoticeUntil' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+grep -Fq 'get_virtual_trackpads' "$ROOT/decky/armada-control/main.py"
+grep -Fq 'reset_virtual_trackpads' "$ROOT/decky/armada-control/main.py"
+grep -Fq '"reset_virtual_trackpads": action_reset_virtual_trackpads' "$ROOT/system_files/usr/libexec/armada/armada-control"
+grep -Fq 'trackpads.resetDefaults' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
 grep -Fq 'python3-evdev' "$ROOT/build_files/10-base-packages.sh"
 grep -Fq 'self.ip.press(side, True)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'self.press_releases[side] = {' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"

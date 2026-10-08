@@ -234,7 +234,7 @@ export const ptBR = {
   "trackpads.backgroundSolid": "Sólido",
   "trackpads.backgroundNone": "Nenhum",
   "trackpads.master": "Trackpads virtuais",
-  "trackpads.masterDescription": "Desligado restaura o toque normal.",
+  "trackpads.masterDescription": "Desligado restaura o toque. Segure L3 + R3 por 3 segundos para alternar.",
   "trackpads.mode": "Modo dos trackpads",
   "trackpads.modeSimple": "Cantos inferiores",
   "trackpads.modeCorners": "Quatro cantos",
@@ -282,4 +282,6 @@ export const ptBR = {
   "trackpads.selectDeckFirst": "Selecione primeiro a emulação Steam Deck acima.",
   "trackpads.unsupported": "Trackpads virtuais não são compatíveis com este dispositivo.",
   "trackpads.saveError": "Não foi possível atualizar os trackpads virtuais",
+  "trackpads.resetDefaults": "Restaurar padrões",
+  "trackpads.resetDefaultsDescription": "Restaura os ajustes. Os trackpads ficam desligados e o toque normal continua ativo.",
 } as const satisfies Record<TranslationKey, string>;

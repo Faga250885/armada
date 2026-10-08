@@ -16,7 +16,7 @@ export const es: Record<TranslationKey, string> = {
   "trackpads.backgroundSolid": "Sólido",
   "trackpads.backgroundNone": "Ninguno",
   "trackpads.master": "Trackpads virtuales",
-  "trackpads.masterDescription": "Al apagar, vuelve el táctil normal.",
+  "trackpads.masterDescription": "Apagado restaura el táctil. Mantén L3 + R3 durante 3 segundos para alternar.",
   "trackpads.mode": "Modo de los trackpads",
   "trackpads.modeSimple": "Esquinas inferiores",
   "trackpads.modeCorners": "Cuatro esquinas",
@@ -64,4 +64,6 @@ export const es: Record<TranslationKey, string> = {
   "trackpads.selectDeckFirst": "Primero selecciona arriba la emulación de Steam Deck.",
   "trackpads.unsupported": "Los trackpads virtuales no son compatibles con este dispositivo.",
   "trackpads.saveError": "No se pudieron actualizar los trackpads virtuales",
+  "trackpads.resetDefaults": "Restaurar predeterminados",
+  "trackpads.resetDefaultsDescription": "Restaura los ajustes. Los trackpads quedan apagados y el táctil normal sigue activo.",
 };

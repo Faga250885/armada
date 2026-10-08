@@ -5,26 +5,26 @@ DEFAULT = {
     "supported": False,
     "enabled": False,
     "blockTouchscreen": False,
-    "gameModeOnly": False,
-    "leftEnabled": False,
-    "rightEnabled": False,
+    "gameModeOnly": True,
+    "leftEnabled": True,
+    "rightEnabled": True,
     "mode": "simple",
     "tapToClick": True,
-    "limitToBounds": False,
+    "limitToBounds": True,
     "deckLikeSize": True,
     "leftSize": 35,
     "rightSize": 35,
-    "edgeGap": 0,
-    "hapticStrength": 35,
-    "borderOpacity": 20,
-    "borderWidth": 1,
+    "edgeGap": 8,
+    "hapticStrength": 60,
+    "borderOpacity": 30,
+    "borderWidth": 2,
     "backgroundStyle": "dots",
-    "backgroundOpacity": 12,
+    "backgroundOpacity": 30,
     "autoHide": True,
     "hideDelay": 1,
-    "borderRadius": 28,
+    "borderRadius": 24,
     "dotSize": 1,
-    "dotGap": 11,
+    "dotGap": 4,
     "centerDotEnabled": False,
     "centerDotSize": 8,
     "centerDotOpacity": 35,
@@ -40,6 +40,10 @@ def get_virtual_trackpads():
 
 def set_virtual_trackpads(config):
     return call("set_virtual_trackpads", config=config)
+
+
+def reset_virtual_trackpads():
+    return call("reset_virtual_trackpads")
 
 
 def get_virtual_trackpads_state():

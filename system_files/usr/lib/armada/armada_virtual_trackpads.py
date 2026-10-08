@@ -1,3 +1,4 @@
+import math
 import os
 from pathlib import Path
 
@@ -8,6 +9,78 @@ except ImportError:  # Local Windows development; deployed Armada systems use Li
 
 
 DECK_TRACKPAD_SIZE_MM = 32.5
+
+# Nominal primary-panel diagonals and native pixel dimensions.  These are
+# model-specific fallbacks for internal DSI panels, which commonly have no
+# EDID.  The two axes are used only for their aspect ratio, not as millimetres.
+# Sources: https://www.ayaneo.com/product/AYANEO-Pocket-S2
+# https://www.ayaneo.com/product/AYANEO-Pocket-ACE
+# https://www.ayntec.com/products/ayn-thor
+# https://www.ayntec.com/products/ayn-odin-3
+# https://www.goretroid.com/products/retroid-pocket-6-handheld
+# https://www.goretroid.com/collections/retro-game-system/products/retroid-pocket-nova-handheld
+# The active visible area of the original Pocket Mini is 3.7 inches; V2
+# exposes the larger 3.92-inch panel.  These figures are nominal, not a
+# calibration of each individual unit.
+PANEL_SPECS = {
+    "ayaneo-pocket-ace": (4.5, 1620, 1080),
+    "ayaneo-pocket-dmg": (3.92, 1240, 1080),
+    "ayaneo-pocket-ds": (7.0, 1920, 1080),  # Gamescope's upper screen.
+    "ayaneo-pocket-evo": (7.0, 1920, 1080),
+    "ayaneo-pocket-micro2": (3.5, 960, 640),
+    "ayaneo-pocket-s1k": (6.0, 1920, 1080),
+    "ayaneo-pocket-s2k": (6.0, 2560, 1440),
+    "ayaneo-pocket-s2": (6.3, 2560, 1440),
+    "ayn-odin-2": (6.0, 1920, 1080),
+    "ayn-odin-2-mini": (5.0, 1920, 1080),
+    "ayn-odin-2-portal": (7.0, 1920, 1080),
+    "ayn-odin-3": (6.0, 1920, 1080),
+    "ayn-thor": (6.0, 1920, 1080),
+    "ayn-thor-lite": (6.0, 1920, 1080),
+    "konkr-pocket-fit": (6.0, 1920, 1080),
+    "konkr-pocket-fit-elite": (6.0, 1920, 1080),
+    "retroid-pocket-5": (5.5, 1920, 1080),
+    "retroid-pocket-5-visionox": (5.5, 1920, 1080),
+    "retroid-pocket-flip2": (5.5, 1920, 1080),
+    "retroid-pocket-flip2-visionox": (5.5, 1920, 1080),
+    "retroid-pocket-mini": (3.7, 1280, 960),
+    "retroid-pocket-mini-v2": (3.92, 1240, 1080),
+    "retroid-pocket-6": (5.5, 1920, 1080),
+    "retroid-pocket-nova": (4.5, 1280, 960),
+}
+
+
+def panel_spec(device_values):
+    if not isinstance(device_values, dict):
+        return None
+    return PANEL_SPECS.get(device_values.get("ARMADA_DEVICE_ID"))
+
+
+def panel_aspect_ratio(device_values):
+    spec = panel_spec(device_values)
+    return spec[1] / spec[2] if spec else 16 / 9
+
+
+class ShortcutHold:
+    """Fire once after both stick buttons have remained down continuously."""
+
+    def __init__(self, seconds=3.0):
+        self.seconds = seconds
+        self.started = None
+        self.armed = True
+
+    def update(self, left, right, now):
+        if not (left and right):
+            self.started = None
+            self.armed = True
+        elif self.started is None:
+            self.started = now
+
+    def ready(self, now):
+        if self.armed and self.started is not None and now - self.started >= self.seconds:
+            self.armed = False
+            return True
+        return False
 
 
 def game_mode_active(user=None, runtime_root=Path("/run/user")):
@@ -31,34 +104,34 @@ def should_capture_touch(config, session_active):
 DEFAULT_CONFIG = {
     "enabled": False,
     "blockTouchscreen": False,
-    "gameModeOnly": False,
-    "leftEnabled": False,
-    "rightEnabled": False,
+    "gameModeOnly": True,
+    "leftEnabled": True,
+    "rightEnabled": True,
     "mode": "simple",
     "tapToClick": True,
-    "limitToBounds": False,
+    "limitToBounds": True,
     "deckLikeSize": True,
     "leftSize": 35,
     "rightSize": 35,
-    "edgeGap": 0,
-    "hapticStrength": 35,
-    "borderOpacity": 20,
-    "borderWidth": 1,
+    "edgeGap": 8,
+    "hapticStrength": 60,
+    "borderOpacity": 30,
+    "borderWidth": 2,
     "backgroundStyle": "dots",
-    "backgroundOpacity": 12,
+    "backgroundOpacity": 30,
     "autoHide": True,
     "hideDelay": 1,
-    "borderRadius": 28,
+    "borderRadius": 24,
     "dotSize": 1,
-    "dotGap": 11,
+    "dotGap": 4,
     "centerDotEnabled": False,
     "centerDotSize": 8,
     "centerDotOpacity": 35,
 }
 
 NUMBER_RANGES = {
-    "leftSize": (15, 60),
-    "rightSize": (15, 60),
+    "leftSize": (15, 80),
+    "rightSize": (15, 80),
     "edgeGap": (0, 160),
     "hapticStrength": (0, 100),
     "borderOpacity": (0, 50),
@@ -117,6 +190,12 @@ def physical_panel_height_mm(device_values=None, drm_root=Path("/sys/class/drm")
         name = path.parent.name.lower()
         priority = 0 if ("dsi" in name or "edp" in name) else 1
         candidates.append((priority, height))
+    if candidates and min(candidates)[0] == 0:
+        return min(candidates)[1]
+    spec = panel_spec(device_values)
+    if spec:
+        diagonal_inches, width_px, height_px = spec
+        return diagonal_inches * 25.4 * height_px / math.hypot(width_px, height_px)
     return min(candidates)[1] if candidates else None
 
 
@@ -153,7 +232,7 @@ def sanitize_config(value):
     elif value.get("fourPads") is True:
         # Preserve the layout selected by images created before modes existed.
         result["mode"] = "corners"
-    if "enabled" not in value and (result["leftEnabled"] or result["rightEnabled"]):
+    if "enabled" not in value and (value.get("leftEnabled") is True or value.get("rightEnabled") is True):
         # Older images used the side toggles as the implicit master switch.
         result["enabled"] = True
     # A short tap always represents the physical click of a Steam Deck pad.
