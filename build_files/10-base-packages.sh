@@ -23,6 +23,7 @@ dnf5 -y install --setopt=install_weak_deps=False \
     bluez \
     dbus-broker \
     python3-gobject \
+    python3-evdev \
     python3-cairo \
     gtk4 \
     libXfixes \

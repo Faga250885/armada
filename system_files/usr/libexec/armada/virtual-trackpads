@@ -14,6 +14,12 @@ from pathlib import Path
 
 from gi.repository import Gio, GLib
 
+try:
+    from evdev import UInput, ecodes
+except ImportError:
+    UInput = None
+    ecodes = None
+
 sys.path.insert(0, "/usr/lib/armada")
 from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, clamp, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_coordinates, trackpad_zone_at
 
@@ -161,6 +167,37 @@ class InputPlumber:
         self.call(FF_IFACE, "Stop", None)
 
 
+class MouseClickSink:
+    """Reliable tap-to-click output independent of Steam's active layout."""
+
+    def __init__(self):
+        self.device = None
+        if UInput is None:
+            return
+        try:
+            self.device = UInput(
+                {ecodes.EV_KEY: [ecodes.BTN_LEFT]},
+                name="Armada Virtual Trackpad Clicks",
+                bustype=ecodes.BUS_VIRTUAL,
+            )
+        except (OSError, RuntimeError) as error:
+            print(f"virtual-trackpads: uinput click device unavailable: {error}", flush=True)
+
+    def click(self):
+        if self.device is None:
+            return False
+        self.device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 1)
+        self.device.syn()
+        self.device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 0)
+        self.device.syn()
+        return True
+
+    def close(self):
+        if self.device is not None:
+            self.device.close()
+            self.device = None
+
+
 class VirtualTrackpads:
     def __init__(self):
         device_env = parse_device_env()
@@ -174,6 +211,7 @@ class VirtualTrackpads:
             device_env.get("ARMADA_PANEL_ORIENTATION", "normal"),
         )
         self.ip = InputPlumber()
+        self.mouse_click = MouseClickSink()
         self.fd = None
         self.x_range = (0, 1)
         self.y_range = (0, 1)
@@ -189,6 +227,7 @@ class VirtualTrackpads:
         self.running = True
         self.reload_requested = False
         self.rumble_stop_at = 0.0
+        self.rumble_active = False
         self.last_haptic = 0.0
         self.press_releases = {}
         self.inertia_haptics = {}
@@ -220,6 +259,11 @@ class VirtualTrackpads:
         os.replace(temporary, STATE_PATH)
 
     def close_device(self):
+        self.inertia_haptics.clear()
+        try:
+            self.stop_haptics()
+        except Exception:
+            pass
         if self.fd is not None:
             try:
                 fcntl.ioctl(self.fd, EVIOCGRAB, 0)
@@ -247,7 +291,6 @@ class VirtualTrackpads:
             except Exception:
                 pass
         self.press_releases.clear()
-        self.inertia_haptics.clear()
         self.write_state()
 
     def open_device(self):
@@ -267,6 +310,9 @@ class VirtualTrackpads:
             self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
         )
         self.config = load_config(device_values=self.device_env)
+        if self.config["hapticStrength"] <= 0:
+            self.inertia_haptics.clear()
+            self.stop_haptics(force=True)
         active = self.config["blockTouchscreen"] or (
             self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
         )
@@ -281,7 +327,14 @@ class VirtualTrackpads:
 
     def haptic(self, multiplier=1.0, duration_scale=1.0):
         configured = self.config["hapticStrength"] / 100.0
-        strength = configured * clamp(multiplier)
+        if configured <= 0:
+            self.inertia_haptics.clear()
+            self.stop_haptics()
+            return
+        # Low settings need a steeper curve because the RP6 actuator has a
+        # noticeable minimum response. Pulse duration still scales as a
+        # second, perceptible dimension.
+        strength = (configured ** 1.7) * clamp(multiplier)
         now = time.monotonic()
         # Some handheld motors quantize low amplitudes heavily.  Vary both
         # amplitude and pulse length so the full 0-100 setting remains useful.
@@ -290,11 +343,23 @@ class VirtualTrackpads:
             return
         try:
             self.ip.rumble(strength)
-            duration = (0.006 + configured * 0.026) * clamp(duration_scale, 0.25, 1.0)
+            self.rumble_active = True
+            duration = (0.004 + (configured ** 1.35) * 0.028) * clamp(
+                duration_scale, 0.25, 1.0
+            )
             self.rumble_stop_at = now + duration
             self.last_haptic = now
         except Exception:
             pass
+
+    def stop_haptics(self, force=False):
+        self.rumble_stop_at = 0.0
+        if not force and not self.rumble_active:
+            return
+        try:
+            self.ip.stop_rumble()
+        finally:
+            self.rumble_active = False
 
     def release_press(self, side):
         pending = self.press_releases.pop(side, None)
@@ -424,17 +489,22 @@ class VirtualTrackpads:
                 click_started = False
                 if tapped:
                     try:
-                        self.ip.press(side, True)
-                        # Steam only accepts a pad click while that pad still
-                        # reports touch.  Release both signals together after
-                        # the click pulse instead of ending touch immediately.
-                        self.press_releases[side] = {
-                            "deadline": time.monotonic() + 0.075,
-                            "index": slot % 256,
-                            "x": x,
-                            "y": y,
-                        }
-                        click_started = True
+                        # End the pad contact before emitting the mouse click.
+                        # This path is immediate and cannot stall on D-Bus.
+                        self.ip.touch(side, slot % 256, False, x, y)
+                        if self.mouse_click.click():
+                            click_started = True
+                        else:
+                            # Keep native pad press as a compatibility fallback
+                            # for images where python-evdev/uinput is missing.
+                            self.ip.press(side, True)
+                            self.press_releases[side] = {
+                                "deadline": time.monotonic() + 0.075,
+                                "index": slot % 256,
+                                "x": x,
+                                "y": y,
+                            }
+                            click_started = True
                     except Exception:
                         pass
                 if not was_suspended and not click_started:
@@ -447,7 +517,7 @@ class VirtualTrackpads:
                     self.inertia_haptics[side] = {
                         "amount": amount,
                         "next": time.monotonic() + 0.035,
-                        "deadline": time.monotonic() + 0.58,
+                        "deadline": time.monotonic() + 0.34,
                     }
             finally:
                 self.write_state()
@@ -525,9 +595,8 @@ class VirtualTrackpads:
             except Exception:
                 pass
             if self.rumble_stop_at and time.monotonic() >= self.rumble_stop_at:
-                self.rumble_stop_at = 0.0
                 try:
-                    self.ip.stop_rumble()
+                    self.stop_haptics()
                 except Exception:
                     pass
             if readable:
@@ -561,8 +630,9 @@ def main():
         daemon.run()
     finally:
         daemon.close_device()
+        daemon.mouse_click.close()
         try:
-            daemon.ip.stop_rumble()
+            daemon.stop_haptics()
         except Exception:
             pass
 

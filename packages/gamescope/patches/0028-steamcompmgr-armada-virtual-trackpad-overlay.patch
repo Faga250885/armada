@@ -183,7 +183,16 @@ index 373d697..5384e23 100644
  		// These are dereferenced on a later focus pass, and finish_destroy_win frees the window
  		// whether or not it is gone, so clear them either way.
  		if (x11_win(pFocus->overrideWindow) == id)
-@@ -7161,6 +7195,17 @@ handle_property_notify(xwayland_ctx_t *ctx, XPropertyEvent *ev)
+@@ -6999,7 +7033,7 @@ handle_property_notify(xwayland_ctx_t *ctx, XPropertyEvent *ev)
+ 				{
+ 					hasRepaintNonBasePlane = true;
+ 				}
+-				if ( w->isExternalOverlay )
++				if ( w->isExternalOverlay || w->isArmadaOverlay )
+ 				{
+ 					hasRepaint = true;
+ 				}
+@@ -7161,6 +7195,18 @@ handle_property_notify(xwayland_ctx_t *ctx, XPropertyEvent *ev)
  			MakeFocusDirty();
  		}
  	}
@@ -195,6 +204,7 @@ index 373d697..5384e23 100644
 +			w->isArmadaOverlay = get_prop(ctx, w->xwayland().id, ctx->atoms.armadaOverlayAtom, 0);
 +			if ( w->isArmadaOverlay )
 +				w->appID = 0;
++			hasRepaintNonBasePlane = true;
 +			MakeFocusDirty();
 +		}
 +	}
@@ -213,6 +223,12 @@ index 373d697..5384e23 100644
  				if (pFocus->overrideWindow &&
  					pFocus->overrideWindow->type == steamcompmgr_win_type_t::XWAYLAND &&
  					pFocus->overrideWindow->xwayland().ctx == server->ctx.get())
+@@ -8060,0 +8111,5 @@ bool handle_done_commit( steamcompmgr_win_t *w, xwayland_ctx_t *ctx, uint64_t co
++
++				if ( w == pFocus->armadaOverlayWindow && w->opacity != TRANSLUCENT )
++				{
++					hasRepaintNonBasePlane = true;
++				}
 @@ -9028,6 +9078,7 @@ void init_xwayland_ctx(uint32_t serverId, gamescope_xwayland_server_t *xwayland_
  	ctx->atoms.gameAtom = XInternAtom(ctx->dpy, GAME_PROP, false);
  	ctx->atoms.overlayAtom = XInternAtom(ctx->dpy, OVERLAY_PROP, false);
@@ -221,6 +237,8 @@ index 373d697..5384e23 100644
  	ctx->atoms.mangoappMsgTypeAtom = XInternAtom(ctx->dpy, MANGOAPP_MSG_TYPE_PROP, false);
  	ctx->atoms.opacityAtom = XInternAtom(ctx->dpy, OPACITY_PROP, false);
  	ctx->atoms.gamesRunningAtom = XInternAtom(ctx->dpy, GAMES_RUNNING_PROP, false);
+@@ -10692,0 +10748 @@ steamcompmgr_main(int argc, char **argv)
++									( pPaintFocus->armadaOverlayWindow && pPaintFocus->armadaOverlayWindow->opacity ) ||
 diff --git a/src/steamcompmgr_shared.hpp b/src/steamcompmgr_shared.hpp
 index c344d10..3ce6041 100644
 --- a/src/steamcompmgr_shared.hpp
