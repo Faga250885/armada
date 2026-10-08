@@ -132,7 +132,7 @@ python3 /ctx/build_files/verify-steam-bootstrap.py \
     "${STEAM_HOME}/package/steam_client_steamdeck_publicbeta_linuxarm64.installed" "${STEAM_HOME}"
 rm -f /etc/steamos-oobe-image
 
-PROTON_VER="11.0-20260703-slr"
+PROTON_VER="11.0-20261005-slr"
 PROTON_ARCHIVE_NAME="proton-cachyos-${PROTON_VER}-arm64"
 # Keep this in sync with armada-fixups when changing Proton major/minor lines.
 PROTON_TOOL_NAME="proton-cachyos-11.0-arm64"
