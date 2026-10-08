@@ -181,12 +181,13 @@ def render_worker(directory):
         paintable = Gtk.WidgetPaintable.new(app.window)
         paintable.snapshot(snapshot, app.width, app.height)
         node = snapshot.to_node()
+        image_path = directory / f"{label}.png"
         if node is None:
+            cairo.ImageSurface(cairo.FORMAT_ARGB32, app.width, app.height).write_to_png(str(image_path))
             return 0
         renderer = Gsk.Renderer.new_for_surface(app.window.get_surface())
         try:
             texture = renderer.render_texture(node, None)
-            image_path = directory / f"{label}.png"
             assert texture.save_to_png(str(image_path))
         finally:
             renderer.unrealize()
@@ -286,9 +287,13 @@ class OverlayRuntimeTests(unittest.TestCase):
              "MIT-MAGIC-COOKIE-1", secrets.token_hex(16)],
             check=True, capture_output=True, text=True,
         )
+        # A pipe can fill with repeated X11 diagnostics and freeze the server,
+        # which would make otherwise bounded tests hang inside XOpenDisplay.
+        cls.xvfb_log = (Path(cls.directory.name) / "xvfb.log").open("w+b")
+        cls.addClassCleanup(cls.xvfb_log.close)
         cls.xvfb = subprocess.Popen(
-            ["Xvfb", cls.display, "-screen", "0", "800x450x24", "-nolisten", "tcp",
-             "-auth", str(cls.authority)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            ["Xvfb", cls.display, "-noreset", "-screen", "0", "800x450x24", "-nolisten", "tcp",
+             "-auth", str(cls.authority)], stdout=cls.xvfb_log, stderr=subprocess.STDOUT,
         )
         cls.addClassCleanup(cls.stop_process, cls.xvfb)
         deadline = time.monotonic() + 5
@@ -340,6 +345,7 @@ class OverlayRuntimeTests(unittest.TestCase):
             environment.pop(name, None)
         environment.update(
             PYTHONPATH=str(LIBRARY), GDK_BACKEND="x11", GSK_RENDERER="cairo",
+            GTK_A11Y="none", NO_AT_BRIDGE="1", GSETTINGS_BACKEND="memory",
             ARMADA_TEST_DISPLAY=self.display,
             ARMADA_TEST_AUTHORITY=str(self.authority),
             ARMADA_DEVICE_ENV="/nonexistent-armada-test-device-env",
@@ -376,10 +382,19 @@ class OverlayRuntimeTests(unittest.TestCase):
         self.assert_no_render_errors(output + errors)
 
     def test_real_gtk_drawing_and_transparency(self):
-        result = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), "--render-worker", self.directory.name],
-            env=self.environment(), capture_output=True, text=True, timeout=18,
-        )
+        try:
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), "--render-worker", self.directory.name],
+                env=self.environment(), capture_output=True, text=True, timeout=18,
+            )
+        finally:
+            output_directory = os.environ.get("ARMADA_OVERLAY_TEST_OUTPUT")
+            if output_directory:
+                destination = Path(output_directory)
+                destination.mkdir(parents=True, exist_ok=True)
+                for screenshot in Path(self.directory.name).glob("*.png"):
+                    shutil.copyfile(screenshot, destination / screenshot.name)
+        print(result.stdout, end="", flush=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_no_render_errors(result.stdout + result.stderr)
         self.assertIn('"alphaPixels"', result.stdout)
