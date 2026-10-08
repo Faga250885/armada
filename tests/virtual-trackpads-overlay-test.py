@@ -138,7 +138,7 @@ def render_worker(directory):
     import gi
 
     gi.require_version("Gsk", "4.0")
-    from gi.repository import Gdk, Gsk, Gtk, GLib
+    from gi.repository import Gtk, GLib
 
     assert Gtk.init_check()
     directory = Path(directory)
@@ -182,26 +182,26 @@ def render_worker(directory):
         paintable.snapshot(snapshot, app.width, app.height)
         node = snapshot.to_node()
         image_path = directory / f"{label}.png"
-        if node is None:
-            cairo.ImageSurface(cairo.FORMAT_ARGB32, app.width, app.height).write_to_png(str(image_path))
-            return 0
-        renderer = Gsk.Renderer.new_for_surface(app.window.get_surface())
-        try:
-            texture = renderer.render_texture(node, None)
-            assert texture.save_to_png(str(image_path))
-        finally:
-            renderer.unrealize()
-        surface = cairo.ImageSurface.create_from_png(str(image_path))
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, app.width, app.height)
+        if node is not None:
+            # Replay GTK's existing render node into an independent target.
+            # Keep capture independent of the live GdkSurface and its frame
+            # production; never unrealize a renderer attached to that surface.
+            node.draw(cairo.Context(surface))
         surface.flush()
-        if surface.get_format() == cairo.FORMAT_RGB24:
-            return surface.get_width() * surface.get_height()
+        surface.write_to_png(str(image_path))
         data = surface.get_data()
         alpha_offset = 3 if sys.byteorder == "little" else 0
-        return sum(
+        visible = sum(
             data[y * surface.get_stride() + x * 4 + alpha_offset] != 0
             for y in range(surface.get_height())
             for x in range(surface.get_width())
         )
+        print(json.dumps({"phase": label, "alphaPixels": visible,
+                          "draws": len(drawn), "fade": app.fade,
+                          "mode": app.config.get("mode"),
+                          "enabled": app.config.get("enabled")}), flush=True)
+        return visible
 
     def check():
         nonlocal phase, phase_started, last_frames
