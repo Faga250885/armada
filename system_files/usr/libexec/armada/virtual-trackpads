@@ -21,7 +21,7 @@ except ImportError:
     ecodes = None
 
 sys.path.insert(0, "/usr/lib/armada")
-from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, clamp, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_coordinates, trackpad_zone_at
+from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, clamp, game_mode_active, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_coordinates, trackpad_zone_at
 
 
 CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
@@ -214,7 +214,7 @@ class VirtualTrackpads:
         self.pad_slots = {}
         self.suspended_slots = set()
         self.last_zones = {"left": "bottom", "right": "bottom"}
-        self.last_positions = {"left": (0.0, 1.0), "right": (1.0, 1.0)}
+        self.last_positions = {"left": (0.25, 0.5), "right": (0.75, 0.5)}
         self.last_touches = {"left": (0.5, 0.5), "right": (0.5, 0.5)}
         self.last_state_write = 0.0
         self.dirty_slots = set()
@@ -225,6 +225,8 @@ class VirtualTrackpads:
         self.haptics_native_check_at = 0.0
         self.native_haptics = False
         self.press_releases = {}
+        self.session_active = game_mode_active()
+        self.last_session_check = 0.0
         self.write_state()
 
     def write_state(self, force=True):
@@ -303,16 +305,17 @@ class VirtualTrackpads:
         self.refresh_haptics_owner(force=True)
 
     def reload(self):
-        previous_active = self.config["blockTouchscreen"] or (
-            self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
-        )
         self.config = load_config(device_values=self.device_env)
-        active = self.config["blockTouchscreen"] or (
-            self.config["enabled"] and (self.config["leftEnabled"] or self.config["rightEnabled"])
-        )
-        if previous_active or not active:
+        self.sync_capture(force=True)
+
+    def should_capture(self):
+        return should_capture_touch(self.config, self.session_active)
+
+    def sync_capture(self, force=False):
+        active = self.should_capture()
+        if self.fd is not None and (force or not active):
             self.close_device()
-        if active:
+        if active and self.fd is None:
             self.open_device()
 
     def normalize(self, value, bounds):
@@ -507,6 +510,16 @@ class VirtualTrackpads:
     def run(self):
         self.reload()
         while self.running:
+            now = time.monotonic()
+            if now - self.last_session_check >= 0.5:
+                self.last_session_check = now
+                session_active = game_mode_active()
+                if session_active != self.session_active:
+                    self.session_active = session_active
+                try:
+                    self.sync_capture()
+                except Exception as error:
+                    print(f"virtual-trackpads: session switch failed: {error}", flush=True)
             if self.reload_requested:
                 self.reload_requested = False
                 try:
@@ -536,7 +549,7 @@ class VirtualTrackpads:
                     self.close_device()
                     time.sleep(1)
                     try:
-                        self.open_device()
+                        self.sync_capture()
                     except Exception:
                         pass
 

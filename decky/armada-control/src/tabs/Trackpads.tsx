@@ -1,5 +1,5 @@
 import { toaster } from "@decky/api";
-import { Field, PanelSection, PanelSectionRow } from "@decky/ui";
+import { Field, PanelSection } from "@decky/ui";
 import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { setVirtualTrackpads } from "../backend";
@@ -8,27 +8,6 @@ import { t } from "../i18n";
 import type { Config, VirtualTrackpadsConfig } from "../types";
 
 type EditableTrackpads = Omit<VirtualTrackpadsConfig, "supported">;
-
-function ColorEdit({ label, value, disabled, onChange }: {
-  label: string;
-  value: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <PanelSectionRow>
-      <label className={`armada-color-field${disabled ? " armada-control-disabled" : ""}`}>
-        <span>{label}</span>
-        <input
-          type="color"
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.currentTarget.value)}
-        />
-      </label>
-    </PanelSectionRow>
-  );
-}
 
 export function Trackpads({ config, setConfig }: {
   config: Config;
@@ -100,6 +79,12 @@ export function Trackpads({ config, setConfig }: {
           onChange={(blockTouchscreen) => update(blockTouchscreen
             ? { blockTouchscreen, enabled: false }
             : { blockTouchscreen }, true)}
+        />
+        <ToggleRow
+          label={t("trackpads.gameModeOnly")}
+          description={t("trackpads.gameModeOnlyDescription")}
+          value={pads.gameModeOnly}
+          onChange={(gameModeOnly) => update({ gameModeOnly }, true)}
         />
         <SelectEdit
           label={t("trackpads.mode")}
@@ -178,14 +163,38 @@ export function Trackpads({ config, setConfig }: {
         />
       </PanelSection>
       <PanelSection title={t("trackpads.appearance")}>
+        <ToggleRow
+          label={t("trackpads.autoHide")}
+          value={pads.autoHide}
+          disabled={visualDisabled}
+          onChange={(autoHide) => update({ autoHide }, true)}
+        />
+        <SliderEdit
+          label={t("trackpads.hideDelay")}
+          value={pads.hideDelay}
+          min={1}
+          max={5}
+          step={1}
+          disabled={visualDisabled || !pads.autoHide}
+          onChange={(hideDelay) => update({ hideDelay })}
+        />
         <SliderEdit
           label={t("trackpads.borderOpacity")}
           value={pads.borderOpacity}
           min={0}
-          max={100}
+          max={50}
           step={5}
           disabled={visualDisabled}
           onChange={(borderOpacity) => update({ borderOpacity })}
+        />
+        <SliderEdit
+          label={t("trackpads.borderWidth")}
+          value={pads.borderWidth}
+          min={1}
+          max={10}
+          step={1}
+          disabled={visualDisabled}
+          onChange={(borderWidth) => update({ borderWidth })}
         />
         <SliderEdit
           label={t("trackpads.borderRadius")}
@@ -196,19 +205,24 @@ export function Trackpads({ config, setConfig }: {
           disabled={visualDisabled}
           onChange={(borderRadius) => update({ borderRadius })}
         />
-        <ColorEdit
-          label={t("trackpads.borderColor")}
-          value={pads.borderColor}
+        <SelectEdit
+          label={t("trackpads.backgroundStyle")}
+          value={pads.backgroundStyle}
           disabled={visualDisabled}
-          onChange={(borderColor) => update({ borderColor })}
+          options={[
+            { data: "dots", label: t("trackpads.backgroundDots") },
+            { data: "solid", label: t("trackpads.backgroundSolid") },
+            { data: "none", label: t("trackpads.backgroundNone") },
+          ]}
+          onChange={(backgroundStyle) => update({ backgroundStyle }, true)}
         />
         <SliderEdit
           label={t("trackpads.backgroundOpacity")}
           value={pads.backgroundOpacity}
           min={0}
-          max={100}
+          max={50}
           step={5}
-          disabled={visualDisabled}
+          disabled={visualDisabled || pads.backgroundStyle === "none"}
           onChange={(backgroundOpacity) => update({ backgroundOpacity })}
         />
         <SliderEdit
@@ -217,7 +231,7 @@ export function Trackpads({ config, setConfig }: {
           min={1}
           max={6}
           step={1}
-          disabled={visualDisabled}
+          disabled={visualDisabled || pads.backgroundStyle !== "dots"}
           onChange={(dotSize) => update({ dotSize })}
         />
         <SliderEdit
@@ -226,14 +240,8 @@ export function Trackpads({ config, setConfig }: {
           min={2}
           max={24}
           step={1}
-          disabled={visualDisabled}
+          disabled={visualDisabled || pads.backgroundStyle !== "dots"}
           onChange={(dotGap) => update({ dotGap })}
-        />
-        <ColorEdit
-          label={t("trackpads.dotColor")}
-          value={pads.dotColor}
-          disabled={visualDisabled}
-          onChange={(dotColor) => update({ dotColor })}
         />
       </PanelSection>
       <PanelSection title={t("trackpads.centerIndicator")}>
@@ -256,20 +264,12 @@ export function Trackpads({ config, setConfig }: {
         <SliderEdit
           label={t("trackpads.centerDotOpacity")}
           value={pads.centerDotOpacity}
-          min={5}
-          max={100}
+          min={0}
+          max={50}
           step={5}
           disabled={centerDotDisabled || !pads.centerDotEnabled}
           onChange={(centerDotOpacity) => update({ centerDotOpacity })}
         />
-        <ColorEdit
-          label={t("trackpads.centerDotColor")}
-          value={pads.centerDotColor}
-          disabled={centerDotDisabled || !pads.centerDotEnabled}
-          onChange={(centerDotColor) => update({ centerDotColor })}
-        />
-        <div className="armada-trackpads-note">{t("trackpads.touchscreenNotice")}</div>
-        <div className="armada-trackpads-note">{t("trackpads.deckTargetNotice")}</div>
       </PanelSection>
     </div>
   );

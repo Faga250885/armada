@@ -109,7 +109,8 @@ export interface RgbConfig {
 export interface VirtualTrackpadsConfig {
   supported: boolean;
   enabled: boolean;
-  blockTouchscreen: boolean;
+    blockTouchscreen: boolean;
+    gameModeOnly: boolean;
   leftEnabled: boolean;
   rightEnabled: boolean;
   mode: "simple" | "corners" | "floating" | "halves";
@@ -120,17 +121,18 @@ export interface VirtualTrackpadsConfig {
   rightSize: number;
   edgeGap: number;
   hapticStrength: number;
-  borderOpacity: number;
-  backgroundOpacity: number;
+    borderOpacity: number;
+    borderWidth: number;
+    backgroundStyle: "dots" | "solid" | "none";
+    backgroundOpacity: number;
+    autoHide: boolean;
+    hideDelay: number;
   borderRadius: number;
   dotSize: number;
   dotGap: number;
-  borderColor: string;
-  dotColor: string;
   centerDotEnabled: boolean;
   centerDotSize: number;
   centerDotOpacity: number;
-  centerDotColor: string;
 }
 
 export interface VirtualTrackpadsState {

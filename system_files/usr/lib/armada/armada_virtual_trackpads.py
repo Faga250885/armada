@@ -1,11 +1,37 @@
+import os
 from pathlib import Path
+
+try:
+    import pwd
+except ImportError:  # Local Windows development; deployed Armada systems use Linux.
+    pwd = None
 
 
 DECK_TRACKPAD_SIZE_MM = 32.5
 
+
+def game_mode_active(user=None, runtime_root=Path("/run/user")):
+    """The session's primary Gamescope socket exists only in Steam Game Mode."""
+    if pwd is None:
+        return False
+    try:
+        account = pwd.getpwnam(user or os.environ.get("ARMADA_SESSION_USER", "armada"))
+        return (runtime_root / str(account.pw_uid) / "gamescope-primary").is_socket()
+    except (KeyError, OSError):
+        return False
+
+
+def should_capture_touch(config, session_active):
+    """Release the digitizer in Desktop when Game Mode only is selected."""
+    return (not config["gameModeOnly"] or session_active) and (
+        config["blockTouchscreen"] or
+        config["enabled"] and (config["leftEnabled"] or config["rightEnabled"])
+    )
+
 DEFAULT_CONFIG = {
     "enabled": False,
     "blockTouchscreen": False,
+    "gameModeOnly": False,
     "leftEnabled": False,
     "rightEnabled": False,
     "mode": "simple",
@@ -17,16 +43,17 @@ DEFAULT_CONFIG = {
     "edgeGap": 0,
     "hapticStrength": 35,
     "borderOpacity": 20,
+    "borderWidth": 1,
+    "backgroundStyle": "dots",
     "backgroundOpacity": 12,
+    "autoHide": True,
+    "hideDelay": 1,
     "borderRadius": 28,
     "dotSize": 1,
     "dotGap": 11,
-    "borderColor": "#ffffff",
-    "dotColor": "#ffffff",
     "centerDotEnabled": False,
     "centerDotSize": 8,
     "centerDotOpacity": 35,
-    "centerDotColor": "#ffffff",
 }
 
 NUMBER_RANGES = {
@@ -34,20 +61,22 @@ NUMBER_RANGES = {
     "rightSize": (15, 60),
     "edgeGap": (0, 160),
     "hapticStrength": (0, 100),
-    "borderOpacity": (0, 100),
-    "backgroundOpacity": (0, 100),
+    "borderOpacity": (0, 50),
+    "borderWidth": (1, 10),
+    "backgroundOpacity": (0, 50),
+    "hideDelay": (1, 5),
     "borderRadius": (0, 100),
     "dotSize": (1, 6),
     "dotGap": (2, 24),
     "centerDotSize": (1, 32),
-    "centerDotOpacity": (5, 100),
+    "centerDotOpacity": (0, 50),
 }
 
 BOOLEAN_KEYS = (
     "enabled", "blockTouchscreen", "leftEnabled", "rightEnabled",
     "tapToClick", "limitToBounds", "deckLikeSize", "centerDotEnabled",
+    "autoHide", "gameModeOnly",
 )
-COLOR_KEYS = ("borderColor", "dotColor", "centerDotColor")
 
 
 def clamp(value, minimum=0.0, maximum=1.0):
@@ -106,16 +135,6 @@ def apply_deck_like_size(config, device_values=None, drm_root=Path("/sys/class/d
     return result
 
 
-def valid_color(value):
-    if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
-        return False
-    try:
-        int(value[1:], 16)
-    except ValueError:
-        return False
-    return True
-
-
 def sanitize_config(value):
     result = dict(DEFAULT_CONFIG)
     if not isinstance(value, dict):
@@ -127,9 +146,8 @@ def sanitize_config(value):
         number = value.get(key)
         if isinstance(number, int) and not isinstance(number, bool):
             result[key] = max(minimum, min(maximum, number))
-    for key in COLOR_KEYS:
-        if valid_color(value.get(key)):
-            result[key] = value[key].lower()
+    if value.get("backgroundStyle") in ("dots", "solid", "none"):
+        result["backgroundStyle"] = value["backgroundStyle"]
     if value.get("mode") in ("simple", "corners", "floating", "halves"):
         result["mode"] = value["mode"]
     elif value.get("fourPads") is True:

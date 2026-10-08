@@ -262,6 +262,21 @@ def render_worker(directory):
                 assert len(drawn) > last_frames, "Disabling did not repaint"
                 pixels["disabled"] = alpha_pixels("disabled")
                 assert pixels["disabled"] == 0, pixels
+                config.update(enabled=True, autoHide=False, backgroundStyle="solid",
+                              borderWidth=10, borderOpacity=0, backgroundOpacity=50)
+                state.update(leftActive=False, rightActive=False)
+                config_path.write_text(json.dumps(config))
+                state_path.write_text(json.dumps(state))
+                phase, phase_started = 5, now
+            elif phase == 5 and now - phase_started >= 0.5:
+                pixels["solid"] = alpha_pixels("solid")
+                assert pixels["solid"] > 1000, pixels
+                config.update(backgroundStyle="none", backgroundOpacity=0)
+                config_path.write_text(json.dumps(config))
+                phase, phase_started = 6, now
+            elif phase == 6 and now - phase_started >= 0.4:
+                pixels["none"] = alpha_pixels("none")
+                assert pixels["none"] == 0, pixels
                 print(json.dumps({"draws": len(drawn), "alphaPixels": pixels}), flush=True)
                 app.quit()
                 return GLib.SOURCE_REMOVE
@@ -275,7 +290,7 @@ def render_worker(directory):
     app.run(None)
     if errors:
         raise errors[0]
-    assert phase == 4, f"Overlay exited prematurely at phase {phase}"
+    assert phase == 6, f"Overlay exited prematurely at phase {phase}"
 
 
 class OverlayRuntimeTests(unittest.TestCase):

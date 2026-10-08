@@ -3,10 +3,14 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHONPATH="$ROOT/system_files/usr/lib/armada" python3 - <<'PYEOF'
+import os
+import socket
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, point_in_trackpad_bounds, rotate_touch, sanitize_config, trackpad_at, trackpad_coordinates
+from armada_virtual_trackpads import DEFAULT_CONFIG, apply_deck_like_size, game_mode_active, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_at, trackpad_coordinates
 
 config = sanitize_config({
     "enabled": True,
@@ -25,6 +29,22 @@ config = sanitize_config({
 assert config["hapticStrength"] == 100
 assert config["borderOpacity"] == 0
 assert config["backgroundOpacity"] == 45
+assert sanitize_config({"borderOpacity": 100, "backgroundOpacity": 100, "centerDotOpacity": 100})["borderOpacity"] == 50
+assert sanitize_config({"borderOpacity": 100, "backgroundOpacity": 100, "centerDotOpacity": 100})["backgroundOpacity"] == 50
+assert sanitize_config({"borderOpacity": 100, "backgroundOpacity": 100, "centerDotOpacity": 100})["centerDotOpacity"] == 50
+assert sanitize_config({"borderWidth": 99})["borderWidth"] == 10
+assert sanitize_config({"backgroundStyle": "solid"})["backgroundStyle"] == "solid"
+assert sanitize_config({"backgroundStyle": "none"})["backgroundStyle"] == "none"
+assert sanitize_config({"backgroundStyle": "bad"})["backgroundStyle"] == "dots"
+assert sanitize_config({"hideDelay": 99})["hideDelay"] == 5
+assert sanitize_config({"gameModeOnly": True})["gameModeOnly"] is True
+only_game = sanitize_config({"enabled": True, "leftEnabled": True, "gameModeOnly": True})
+assert not should_capture_touch(only_game, False)
+assert should_capture_touch(only_game, True)
+assert should_capture_touch({**only_game, "gameModeOnly": False}, False)
+assert not should_capture_touch({**only_game, "enabled": False, "blockTouchscreen": True}, False)
+assert should_capture_touch({**only_game, "enabled": False, "blockTouchscreen": True}, True)
+assert sanitize_config({"borderColor": "#ff0000"}).get("borderColor") is None
 assert sanitize_config({"leftEnabled": 1})["leftEnabled"] is False
 assert sanitize_config({"enabled": False, "leftEnabled": True})["enabled"] is False
 assert sanitize_config({"leftEnabled": True})["enabled"] is True
@@ -34,6 +54,18 @@ assert sanitize_config({"tapToClick": False})["tapToClick"] is True
 assert set(config) == set(DEFAULT_CONFIG)
 assert "fixedBottom" not in DEFAULT_CONFIG
 assert DEFAULT_CONFIG["deckLikeSize"] is True
+with tempfile.TemporaryDirectory() as directory:
+    runtime = Path(directory)
+    user_runtime = runtime / str(os.getuid())
+    user_runtime.mkdir()
+    with patch("armada_virtual_trackpads.pwd.getpwnam", return_value=SimpleNamespace(pw_uid=os.getuid())):
+        assert not game_mode_active(runtime_root=runtime)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as gamescope:
+            gamescope.bind(str(user_runtime / "gamescope-test"))
+            (user_runtime / "gamescope-primary").symlink_to("gamescope-test")
+            assert game_mode_active(runtime_root=runtime)
+            (user_runtime / "gamescope-primary").unlink()
+            assert not game_mode_active(runtime_root=runtime)
 deck_like = apply_deck_like_size(config, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"})
 assert deck_like["leftSize"] == deck_like["rightSize"] == 47
 manual_size = apply_deck_like_size({**config, "deckLikeSize": False, "leftSize": 38, "rightSize": 38}, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"})
@@ -101,7 +133,9 @@ PYEOF
 
 grep -Fq 'borderRadius: `${config.borderRadius / 2}%`' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
 grep -Fq 'context.arc(' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
-grep -Fq 'HOLD_MS = 1000' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'const holdMs = config.hideDelay * 1000' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'backgroundStyle === "dots"' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'game_mode_active' "$ROOT/system_files/usr/lib/armada/armada_virtual_trackpads.py"
 grep -Fq 'config.mode === "halves"' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
 grep -Fq '{ id: "Trackpads", title: tabIcons.Trackpads' "$ROOT/decky/armada-control/src/Content.tsx"
 ! grep -Fq '<Trackpads config={config} setConfig={setConfig} />' "$ROOT/decky/armada-control/src/tabs/Settings.tsx"

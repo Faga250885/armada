@@ -8,50 +8,28 @@ const EMPTY: VirtualTrackpadsState = {
   rightActive: false,
   leftZone: "bottom",
   rightZone: "bottom",
-  leftX: 0,
-  leftY: 1,
-  rightX: 1,
-  rightY: 1,
+  leftX: 0.25,
+  leftY: 0.5,
+  rightX: 0.75,
+  rightY: 0.5,
   leftTouchX: 0.5,
   leftTouchY: 0.5,
   rightTouchX: 0.5,
   rightTouchY: 0.5,
 };
-const HOLD_MS = 1000;
-
-function colorChannels(color: string) {
-  const value = /^#[0-9a-f]{6}$/i.test(color) ? Number.parseInt(color.slice(1), 16) : 0xffffff;
-  return [value >> 16, (value >> 8) & 255, value & 255];
-}
-
-function colorWithOpacity(color: string, opacity: number) {
-  const [red, green, blue] = colorChannels(color);
-  return `rgba(${red},${green},${blue},${opacity / 100})`;
-}
-
-function ReactiveDots({ active, touchX, touchY, opacity, color, dotSize, dotGap }: {
-  active: boolean;
-  touchX: number;
-  touchY: number;
+function StaticDots({ opacity, dotSize, dotGap }: {
   opacity: number;
-  color: string;
   dotSize: number;
   dotGap: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const strengthRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const parent = canvas?.parentElement;
     if (!canvas || !parent) return;
     let frame = 0;
-    let previous = performance.now();
-    const draw = (now: number) => {
-      const elapsed = Math.min(40, now - previous);
-      previous = now;
-      const target = active ? 1 : 0;
-      strengthRef.current += (target - strengthRef.current) * (1 - Math.exp(-elapsed / 85));
+    const draw = () => {
       const bounds = parent.getBoundingClientRect();
       const ratio = Math.min(2, window.devicePixelRatio || 1);
       const width = Math.max(1, Math.round(bounds.width));
@@ -64,27 +42,16 @@ function ReactiveDots({ active, touchX, touchY, opacity, color, dotSize, dotGap 
       if (!context) return;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
-      context.fillStyle = colorWithOpacity(color, opacity);
+      context.fillStyle = `rgba(255,255,255,${Math.min(50, opacity) / 100})`;
       const spacing = dotSize + dotGap;
       const radius = dotSize / 2;
-      const influenceRadius = Math.min(width, height) * 0.28;
-      const centerX = touchX * width;
-      const centerY = touchY * height;
       for (let baseX = spacing / 2; baseX < width; baseX += spacing) {
         for (let baseY = spacing / 2; baseY < height; baseY += spacing) {
-          const deltaX = baseX - centerX;
-          const deltaY = baseY - centerY;
-          const distance = Math.hypot(deltaX, deltaY);
-          const influence = Math.max(0, 1 - distance / influenceRadius);
-          const push = influence * influence * 9 * strengthRef.current;
-          const directionX = distance > 0.01 ? deltaX / distance : 0;
-          const directionY = distance > 0.01 ? deltaY / distance : 0;
           context.beginPath();
-          context.arc(baseX + directionX * push, baseY + directionY * push, radius, 0, Math.PI * 2);
+          context.arc(baseX, baseY, radius, 0, Math.PI * 2);
           context.fill();
         }
       }
-      if (Math.abs(target - strengthRef.current) > 0.002) frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     const observer = new ResizeObserver(() => {
@@ -96,7 +63,7 @@ function ReactiveDots({ active, touchX, touchY, opacity, color, dotSize, dotGap 
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [active, touchX, touchY, opacity, color, dotSize, dotGap]);
+  }, [opacity, dotSize, dotGap]);
 
   return <canvas ref={canvasRef} aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />;
 }
@@ -108,6 +75,7 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
   const hideTimers = useRef<Record<string, number>>({});
   const previewTimer = useRef<number | null>(null);
   const enabled = config.enabled && (config.leftEnabled || config.rightEnabled);
+  const holdMs = config.hideDelay * 1000;
 
   useEffect(() => {
     if (!enabled) {
@@ -130,14 +98,14 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
     const preview = () => {
       setPreviewing(true);
       if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
-      previewTimer.current = window.setTimeout(() => setPreviewing(false), HOLD_MS);
+      previewTimer.current = window.setTimeout(() => setPreviewing(false), holdMs);
     };
     window.addEventListener("armada-trackpads-preview", preview);
     return () => {
       window.removeEventListener("armada-trackpads-preview", preview);
       if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
     };
-  }, []);
+  }, [holdMs]);
 
   useEffect(() => {
     for (const side of ["left", "right"] as const) {
@@ -159,7 +127,7 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
       } else if (visible[key]) {
         hideTimers.current[side] = window.setTimeout(() => {
           setVisible((current) => ({ ...current, [key]: false }));
-        }, HOLD_MS);
+        }, holdMs);
       }
     }
     return () => {
@@ -180,6 +148,7 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
     active.rightTouchY,
     config.leftEnabled,
     config.rightEnabled,
+    holdMs,
   ]);
 
   // Full-screen halves are deliberately invisible: they only translate touch
@@ -197,10 +166,8 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
         ? zone === "floating"
         : zone === "bottom";
     const shown = sideEnabled && available && (
-      previewing || (visible[`${side}Active` as const] && selectedZone === zone)
+      previewing || !config.autoHide || (visible[`${side}Active` as const] && selectedZone === zone)
     );
-    const touchX = active[`${side}TouchX` as const] * 100;
-    const touchY = active[`${side}TouchY` as const] * 100;
     const size = config[`${side}Size` as const];
     const position = zone === "floating"
         ? {
@@ -225,24 +192,22 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
           ...position,
           boxSizing: "border-box",
           overflow: "hidden",
-          border: `1px solid ${colorWithOpacity(config.borderColor, config.borderOpacity)}`,
+          outline: `${config.borderWidth}px solid rgba(255,255,255,${Math.min(50, config.borderOpacity) / 100})`,
+          background: config.backgroundStyle === "solid"
+            ? `rgba(255,255,255,${Math.min(50, config.backgroundOpacity) / 100})`
+            : "transparent",
           borderRadius: `${config.borderRadius / 2}%`,
-          background: "transparent",
           boxShadow: "none",
           opacity: shown ? 1 : 0,
           transition: "opacity 280ms ease-in-out",
           willChange: "opacity",
         }}
       >
-        <ReactiveDots
-          active={sideActive && selectedZone === zone}
-          touchX={touchX / 100}
-          touchY={touchY / 100}
+        {config.backgroundStyle === "dots" && <StaticDots
           opacity={config.backgroundOpacity}
-          color={config.dotColor}
           dotSize={config.dotSize}
           dotGap={config.dotGap}
-        />
+        />}
       </div>
     );
   };
@@ -267,8 +232,8 @@ export function VirtualTrackpadOverlay({ config }: { config: VirtualTrackpadsCon
           width: `${config.centerDotSize}px`,
           height: `${config.centerDotSize}px`,
           borderRadius: "50%",
-          background: config.centerDotColor,
-          opacity: config.centerDotOpacity / 100,
+          background: "white",
+          opacity: Math.min(50, config.centerDotOpacity) / 100,
           transform: "translate(-50%, -50%)",
         }}
       />
