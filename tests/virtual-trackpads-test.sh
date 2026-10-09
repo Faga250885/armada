@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from armada_virtual_trackpads import DEFAULT_CONFIG, SHORTCUT_BUTTONS, ShortcutHold, display_dimensions, game_mode_active, layout_to_screen, panel_aspect_ratio, point_in_trackpad_bounds, rotate_touch, sanitize_config, screen_to_layout, should_capture_touch, trackpad_at, trackpad_coordinates, trackpad_rect, transform_touch
+from armada_virtual_trackpads import DEFAULT_CONFIG, SHORTCUT_BUTTONS, ShortcutHold, display_dimensions, game_mode_active, panel_aspect_ratio, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_at, trackpad_coordinates, trackpad_rect, transform_touch
 
 config = sanitize_config({
     "enabled": True,
@@ -44,7 +44,7 @@ assert not should_capture_touch(sanitize_config({}), True)
 assert {key: DEFAULT_CONFIG[key] for key in (
     "enabled", "blockTouchscreen", "gameModeOnly", "leftEnabled", "rightEnabled",
     "mode", "edgeGap", "limitToBounds", "hapticStrength",
-    "shortcutEnabled", "shortcutButtons", "shortcutHoldSeconds", "screen", "touchRotation", "touchMirror",
+    "shortcutEnabled", "shortcutButtons", "shortcutHoldSeconds", "screen",
     "autoHide", "hideDelay", "borderWidth", "borderOpacity", "borderRadius",
     "backgroundStyle", "dotSize", "dotGap", "backgroundOpacity", "centerDotEnabled",
 )} == {
@@ -52,7 +52,7 @@ assert {key: DEFAULT_CONFIG[key] for key in (
     "leftEnabled": True, "rightEnabled": True, "mode": "simple",
     "edgeGap": 8, "limitToBounds": True,
     "shortcutEnabled": True, "shortcutButtons": ["L3", "R3"], "shortcutHoldSeconds": 3,
-    "screen": "primary", "touchRotation": "normal", "touchMirror": False,
+    "screen": "primary",
     "hapticStrength": 60, "autoHide": True, "hideDelay": 1,
     "borderWidth": 2, "borderOpacity": 30, "borderRadius": 24,
     "backgroundStyle": "dots", "dotSize": 1, "dotGap": 4,
@@ -90,7 +90,8 @@ copy["shortcutButtons"].append("A")
 assert DEFAULT_CONFIG["shortcutButtons"] == ["L3", "R3"]
 assert sanitize_config({"screen": "secondary", "touchRotation": "upside_down", "touchMirror": True})["screen"] == "secondary"
 assert sanitize_config({"screen": "invalid", "touchRotation": "invalid"})["screen"] == "primary"
-assert sanitize_config({"touchRotation": "invalid"})["touchRotation"] == "normal"
+assert "touchRotation" not in sanitize_config({"touchRotation": "right"})
+assert "touchMirror" not in sanitize_config({"touchMirror": True})
 with tempfile.TemporaryDirectory() as directory:
     runtime = Path(directory)
     user_runtime = runtime / str(os.getuid())
@@ -148,19 +149,13 @@ assert rotate_touch(0.25, 0.75, "normal") == (0.25, 0.75)
 # raw top-left to visible top-right, without a second device-specific quirk.
 assert transform_touch(0, 0, {"ARMADA_PANEL_ORIENTATION": "left"}, config) == (1, 0)
 assert transform_touch(0, 0, {"ARMADA_PANEL_ORIENTATION": "right"}, config) == (0, 1)
-assert transform_touch(0.2, 0.3, {}, {**config, "touchRotation": "normal"}) == (0.2, 0.3)
-for rotation, expected in (("normal", (0, 0)), ("right", (1, 0)), ("upside_down", (1, 1)), ("left", (0, 1))):
-    corrected = {**config, "touchRotation": rotation}
-    assert layout_to_screen(0, 0, corrected) == expected
-    assert layout_to_screen(0, 0, {**corrected, "touchMirror": True}) == (1 - expected[0], expected[1])
-    # A layout setting must not apply a second correction to raw panel input.
-    assert transform_touch(0, 0, {}, corrected) == (0, 0)
-    assert transform_touch(0, 0, {}, {**corrected, "touchMirror": True}) == (0, 0)
-    for mirror in (False, True):
-        oriented = {**corrected, "touchMirror": mirror}
-        for point in ((0, 0), (1, 1), (0.2, 0.7)):
-            roundtrip = screen_to_layout(*layout_to_screen(*point, oriented), oriented)
-            assert all(abs(a - b) < 1e-9 for a, b in zip(point, roundtrip))
+assert transform_touch(0.2, 0.3, {}, config) == (0.2, 0.3)
+assert transform_touch(0, 0, {"ARMADA_PANEL_ORIENTATION": "upside_down"}, config) == (1, 1)
+# Old manual settings must not rotate the geometry or override panel metadata.
+for rotation in ("normal", "right", "upside_down", "left"):
+    migrated = sanitize_config({**config, "touchRotation": rotation, "touchMirror": True})
+    assert migrated == config
+    assert transform_touch(0, 0, {"ARMADA_PANEL_ORIENTATION": "left"}, migrated) == (1, 0)
 
 # 35% high square in a 16:9 viewport occupies 19.6875% of its width.
 left = trackpad_at(0.05, 0.9, config)
@@ -232,75 +227,52 @@ for pixel_width, pixel_height in ((1280, 720), (1280, 960), (1920, 1080)):
             if zone == "bottom":
                 assert trackpad_at(x, y, geometry, aspect, pixel_height)[0] == side
 
-# Rotated/mirrored pads have matching visible and active pixel rectangles.
-# Square size and corner gap remain constant even through quarter turns on
-# widescreen panels. Test a second (4:3) screen as well as the RP6 resolution.
-for pixel_width, pixel_height in ((1920, 1080), (1280, 960)):
-    aspect = pixel_width / pixel_height
-    for rotation in ("normal", "right", "upside_down", "left"):
-        for mirror in (False, True):
-            oriented = {**simple, "leftSize": 35, "rightSize": 35, "edgeGap": 8,
-                        "touchRotation": rotation, "touchMirror": mirror}
-            for side in ("left", "right"):
-                for zone in ("bottom", "top", "floating"):
-                    anchor_x, anchor_y = layout_to_screen(0.25 if side == "left" else 0.75, 0.5, oriented)
-                    rect_x, rect_y, width, height = trackpad_rect(
-                        side, zone, oriented, anchor_x, anchor_y, aspect, pixel_height)
-                    assert abs(width - pixel_height * 0.35) < 1e-8
-                    assert abs(height - width) < 1e-8
-                    center = (rect_x + width / 2) / pixel_width, (rect_y + height / 2) / pixel_height
-                    assert point_in_trackpad_bounds(*center, side, zone, oriented, anchor_x, anchor_y, aspect, pixel_height)
-                    local = trackpad_coordinates(*center, side, zone, oriented, anchor_x, anchor_y, aspect, pixel_height)
-                    assert all(abs(value - 0.5) < 1e-8 for value in local)
-                    for px, py, inside in (
-                        (rect_x + 1, rect_y + height / 2, True),
-                        (rect_x - 1, rect_y + height / 2, False),
-                        (rect_x + width + 1, rect_y + height / 2, False),
-                        (rect_x + width / 2, rect_y + 1, True),
-                        (rect_x + width / 2, rect_y - 1, False),
-                        (rect_x + width / 2, rect_y + height + 1, False),
-                    ):
-                        assert point_in_trackpad_bounds(px / pixel_width, py / pixel_height, side, zone,
-                                                        oriented, anchor_x, anchor_y, aspect, pixel_height) is inside
-                    mode = "floating" if zone == "floating" else "corners"
-                    hit = trackpad_zone_at(*center, {**oriented, "mode": mode}, aspect, pixel_height)
-                    assert hit[:2] == (side, zone)
-                    if zone == "floating":
-                        assert all(abs(a - b) < 1e-9 for a, b in zip(center, (anchor_x, anchor_y)))
-                    else:
-                        # Every fixed pad stays exactly one configured gap
-                        # from each of its two physical screen edges.
-                        assert min(abs(rect_x - 8), abs(pixel_width - rect_x - width - 8)) < 1e-8
-                        assert min(abs(rect_y - 8), abs(pixel_height - rect_y - height - 8)) < 1e-8
-                half_point = layout_to_screen(0.25 if side == "left" else 0.75, 0.4, oriented)
-                hit = trackpad_zone_at(*half_point, {**oriented, "mode": "halves"}, aspect, pixel_height)
-                assert hit[:2] == (side, "half")
-                assert abs(hit[2] - 0.5) < 1e-9 and abs(hit[3] - 0.4) < 1e-9
+# A single screen-wide pad spans both halves continuously, including all edges,
+# irrespective of old zone toggles, visual settings, size or selected resolution.
+for mode, side in (("fullLeft", "left"), ("fullRight", "right")):
+    full = sanitize_config({**config, "mode": mode, "leftEnabled": False, "rightEnabled": False})
+    assert full["leftEnabled"] is (side == "left")
+    assert full["rightEnabled"] is (side == "right")
+    assert should_capture_touch(full, True)
+    assert not should_capture_touch({**full, "enabled": False}, True)
+    for pixel_width, pixel_height in ((1920, 1080), (1280, 960)):
+        aspect = pixel_width / pixel_height
+        assert trackpad_rect(side, "full", full, aspect_ratio=aspect, pixel_height=pixel_height) == (0, 0, pixel_width, pixel_height)
+        for x, y in ((0, 0), (1, 0), (0, 1), (1, 1), (0.25, 0.3), (0.49, 0.5), (0.5, 0.5), (0.51, 0.5), (0.75, 0.7)):
+            assert trackpad_zone_at(x, y, full, aspect, pixel_height) == (side, "full", x, y)
+            assert trackpad_coordinates(x, y, side, "full", full, aspect_ratio=aspect, pixel_height=pixel_height) == (x, y)
+            assert point_in_trackpad_bounds(x, y, side, "full", full)
+            assert trackpad_zone_at(x, y, {**full, "enabled": False}) is None
+        for x, y in ((-0.01, 0.5), (1.01, 0.5), (0.5, -0.01), (0.5, 1.01)):
+            assert trackpad_zone_at(x, y, full) is None
+            assert not point_in_trackpad_bounds(x, y, side, "full", full)
+    split = sanitize_config({**full, "mode": "halves"})
+    assert split["leftEnabled"] and split["rightEnabled"]
+    assert trackpad_zone_at(0.25, 0.5, split) == ("left", "half", 0.5, 0.5)
+    assert trackpad_zone_at(0.75, 0.5, split) == ("right", "half", 0.5, 0.5)
 
-# The bottom pair visibly moves around the four edges, retaining pad identity.
-expected_centers = {
-    "normal": (("left", "bottom"), ("right", "bottom")),
-    "right": (("left", "top"), ("left", "bottom")),
-    "upside_down": (("right", "top"), ("left", "top")),
-    "left": (("right", "bottom"), ("right", "top")),
-}
-for rotation, expected in expected_centers.items():
-    for side, (horizontal, vertical) in zip(("left", "right"), expected):
-        x, y, width, height = trackpad_rect(side, "bottom", {**simple, "touchRotation": rotation})
-        assert (x + width / 2 < 1920 / 2) == (horizontal == "left")
-        assert (y + height / 2 < 1080 / 2) == (vertical == "top")
+# Floating input still matches the rendered square at different resolutions.
+for pixel_width, pixel_height in ((1920, 1080), (1280, 960)):
+    for side, anchor_x in (("left", 0.25), ("right", 0.75)):
+        aspect = pixel_width / pixel_height
+        x, y, width, height = trackpad_rect(side, "floating", floating, anchor_x, 0.5, aspect, pixel_height)
+        assert abs(width - height) < 1e-8
+        center = (x + width / 2) / pixel_width, (y + height / 2) / pixel_height
+        assert trackpad_zone_at(*center, floating, aspect, pixel_height) == (side, "floating", 0.5, 0.5)
+        local = trackpad_coordinates(*center, side, "floating", floating, anchor_x, 0.5, aspect, pixel_height)
+        assert all(abs(value - 0.5) < 1e-8 for value in local)
 
 print("Virtual trackpad geometry and configuration tests passed")
 PYEOF
 
 # Rendering lives in the native GTK overlay; the runtime overlay tests cover
-# repainting, background modes, fading, rotation, and shortcut notices.
+# repainting, background modes, fading, invisible screen modes, and shortcut notices.
 grep -Fq 'radius = min(width, height) / 2.0 * clamp(float(self.config.get("borderRadius", 28)) / 100.0)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'context.arc(x + base_x, y + base_y, dot_size / 2.0, 0, math.tau)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'hold_seconds = float(self.config.get("hideDelay", 1))' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'if background == "dots":' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'game_mode_active' "$ROOT/system_files/usr/lib/armada/armada_virtual_trackpads.py"
-grep -Fq 'if not overlay_enabled(self.config) or self.config.get("mode") == "halves":' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+grep -Fq 'if not overlay_enabled(self.config) or self.config.get("mode") in SCREEN_MODES:' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq '{ id: "Trackpads", title: tabIcons.Trackpads' "$ROOT/decky/armada-control/src/Content.tsx"
 ! grep -Fq '<Trackpads config={config} setConfig={setConfig} />' "$ROOT/decky/armada-control/src/tabs/Settings.tsx"
 grep -Fq 'fcntl.ioctl(fd, EVIOCGRAB, 1)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"

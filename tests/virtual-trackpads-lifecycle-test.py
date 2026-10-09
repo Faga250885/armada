@@ -130,9 +130,15 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.actions(), [["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE]])
         self.assertEqual(self.session.call_args.args, ("restart", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
 
-    def test_screen_halves_need_no_overlay(self):
-        control.sync_virtual_trackpads(sanitize_config({"enabled": True, "mode": "halves"}))
-        self.assertEqual(self.session.call_args.args[0], "stop")
+    def test_screen_modes_need_capture_without_overlay(self):
+        for mode in ("halves", "fullLeft", "fullRight"):
+            with self.subTest(mode=mode):
+                control.VIRTUAL_TRACKPADS_LIFECYCLE.clear()
+                self.run.reset_mock()
+                self.session.reset_mock()
+                control.sync_virtual_trackpads(sanitize_config({"enabled": True, "mode": mode}))
+                self.assertIn(["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE], self.actions())
+                self.assertEqual(self.session.call_args.args[0], "stop")
 
     def test_closing_secondary_session_releases_capture_and_opening_it_restores(self):
         config = sanitize_config({"enabled": True, "screen": "secondary"})
@@ -182,17 +188,20 @@ class LifecycleTests(unittest.TestCase):
         self.run.assert_not_called()
         self.assertEqual(self.session.call_args.args, ("stop", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
 
-    def test_shortcut_on_in_halves_opens_notice_then_stops_only_overlay(self):
-        config = sanitize_config({"enabled": True, "mode": "halves"})
-        with patch.object(control.time, "time", return_value=100.0):
-            control.sync_virtual_trackpads(config, shortcut_notice=True)
-        self.assertIn(["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE], self.actions())
-        self.assertEqual(self.session.call_args.args, ("restart", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
-        self.run.reset_mock()
-        with patch.object(control.time, "time", return_value=102.1):
-            control.sync_virtual_trackpads(config)
-        self.run.assert_not_called()
-        self.assertEqual(self.session.call_args.args, ("stop", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+    def test_shortcut_in_screen_modes_opens_notice_then_stops_only_overlay(self):
+        for mode in ("halves", "fullLeft", "fullRight"):
+            control.VIRTUAL_TRACKPADS_LIFECYCLE.clear()
+            self.run.reset_mock()
+            config = sanitize_config({"enabled": True, "mode": mode})
+            with patch.object(control.time, "time", return_value=100.0):
+                control.sync_virtual_trackpads(config, shortcut_notice=True)
+            self.assertIn(["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE], self.actions())
+            self.assertEqual(self.session.call_args.args, ("restart", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+            self.run.reset_mock()
+            with patch.object(control.time, "time", return_value=102.1):
+                control.sync_virtual_trackpads(config)
+            self.run.assert_not_called()
+            self.assertEqual(self.session.call_args.args, ("stop", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
 
     def test_failed_capture_start_does_not_publish_success_notice(self):
         self.run.side_effect = RuntimeError("could not start")
@@ -317,11 +326,32 @@ class ConfigurationTests(unittest.TestCase):
         with patch.object(control, "bottom_screen_supported", return_value=True):
             result = control.action_set_virtual_trackpads({"config": sanitize_config({
                 "screen": "secondary", "shortcutButtons": ["Steam", "R3"], "shortcutHoldSeconds": 0,
-                "touchRotation": "right", "touchMirror": True,
             })})
         self.assertEqual(result["screen"], "secondary")
         self.assertEqual(result["shortcutHoldSeconds"], 0)
-        self.assertTrue(result["touchMirror"])
+
+    def test_legacy_orientation_is_dropped_when_loading_and_saving(self):
+        legacy = {**sanitize_config({}), "touchRotation": "right", "touchMirror": True}
+        self.config_path.write_text(json.dumps(legacy))
+        config = control.virtual_trackpads_config()
+        self.assertNotIn("touchRotation", config)
+        self.assertNotIn("touchMirror", config)
+        control.action_set_virtual_trackpads({"config": config})
+        self.assertEqual(json.loads(self.config_path.read_text()), config)
+
+    def test_api_enforces_single_side_and_shortcut_preserves_mode(self):
+        for mode, side in (("fullLeft", "left"), ("fullRight", "right")):
+            with self.subTest(mode=mode):
+                config = {**sanitize_config({"mode": mode}), "leftEnabled": False, "rightEnabled": False}
+                saved = control.action_set_virtual_trackpads({"config": config})
+                self.assertEqual(saved["leftEnabled"], side == "left")
+                self.assertEqual(saved["rightEnabled"], side == "right")
+                for enabled in (True, False, True):
+                    toggled = control.action_toggle_virtual_trackpads({})
+                    self.assertEqual(toggled["enabled"], enabled)
+                    self.assertEqual(toggled["mode"], mode)
+                    self.assertEqual(toggled["leftEnabled"], side == "left")
+                    self.assertEqual(toggled["rightEnabled"], side == "right")
 
     def test_enabling_secondary_requires_its_game_mode_session_but_disabling_is_always_allowed(self):
         config = sanitize_config({"enabled": True, "screen": "secondary"})
@@ -371,53 +401,79 @@ class ShortcutTests(unittest.TestCase):
 
 
 class CaptureLifecycleTests(unittest.TestCase):
-    def test_rotated_visible_pad_acquires_and_resumes_same_contact_on_reentry(self):
-        for rotation in ("normal", "right", "upside_down", "left"):
-            for mirror in (False, True):
-                with self.subTest(rotation=rotation, mirror=mirror):
-                    pads = daemon.VirtualTrackpads.__new__(daemon.VirtualTrackpads)
-                    pads.config = sanitize_config({
-                        "enabled": True, "limitToBounds": True,
-                        "touchRotation": rotation, "touchMirror": mirror,
-                    })
-                    pads.device_env = {}
-                    pads.x_range, pads.y_range = (0, 1920), (0, 1080)
-                    pads.pixel_height, pads.aspect_ratio = 1080, 1920 / 1080
-                    pads.pad_slots, pads.press_releases = {}, {}
-                    pads.suspended_slots = set()
-                    pads.last_zones, pads.last_positions, pads.last_touches = {}, {}, {}
-                    pads.write_state, pads.ip = Mock(), Mock()
-                    pads.slots = {0: {"tracking": 7, "x": 960, "y": 540}}
-                    pads.update_slot(0)
-                    pads.ip.touch.assert_not_called()
+    def test_visible_pad_acquires_and_resumes_same_contact_on_reentry(self):
+        pads = daemon.VirtualTrackpads.__new__(daemon.VirtualTrackpads)
+        pads.config = sanitize_config({
+            "enabled": True, "limitToBounds": True,
+        })
+        pads.device_env = {}
+        pads.x_range, pads.y_range = (0, 1920), (0, 1080)
+        pads.pixel_height, pads.aspect_ratio = 1080, 1920 / 1080
+        pads.pad_slots, pads.press_releases = {}, {}
+        pads.suspended_slots = set()
+        pads.last_zones, pads.last_positions, pads.last_touches = {}, {}, {}
+        pads.write_state, pads.ip = Mock(), Mock()
+        pads.slots = {0: {"tracking": 7, "x": 960, "y": 540}}
+        pads.update_slot(0)
+        pads.ip.touch.assert_not_called()
 
-                    # Use the same rectangle as the overlay, then move the
-                    # held finger into it without a new touch-down event.
-                    x, y, width, height = trackpad_rect("left", "bottom", pads.config)
-                    center = {"x": x + width / 2, "y": y + height / 2}
-                    pads.slots[0].update(center)
-                    pads.update_slot(0)
-                    self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, True))
-                    self.assertAlmostEqual(pads.ip.touch.call_args.args[3], 0.5)
-                    self.assertAlmostEqual(pads.ip.touch.call_args.args[4], 0.5)
-                    self.assertEqual(pads.pad_slots[0][:2], ("left", "bottom"))
+        # Use the same rectangle as the overlay, then move the
+        # held finger into it without a new touch-down event.
+        x, y, width, height = trackpad_rect("left", "bottom", pads.config)
+        center = {"x": x + width / 2, "y": y + height / 2}
+        pads.slots[0].update(center)
+        pads.update_slot(0)
+        self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, True))
+        self.assertAlmostEqual(pads.ip.touch.call_args.args[3], 0.5)
+        self.assertAlmostEqual(pads.ip.touch.call_args.args[4], 0.5)
+        self.assertEqual(pads.pad_slots[0][:2], ("left", "bottom"))
 
-                    pads.slots[0].update({"x": 960, "y": 540})
-                    pads.update_slot(0)
-                    self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, False))
-                    self.assertIn(0, pads.suspended_slots)
-                    self.assertTrue(pads.slots[0]["cancelTap"])
-                    pads.ip.touch.reset_mock()
-                    pads.update_slot(0)
-                    pads.ip.touch.assert_not_called()
+        pads.slots[0].update({"x": 960, "y": 540})
+        pads.update_slot(0)
+        self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, False))
+        self.assertIn(0, pads.suspended_slots)
+        self.assertTrue(pads.slots[0]["cancelTap"])
+        pads.ip.touch.reset_mock()
+        pads.update_slot(0)
+        pads.ip.touch.assert_not_called()
 
-                    pads.slots[0].update(center)
-                    pads.update_slot(0)
-                    self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, True))
-                    self.assertAlmostEqual(pads.ip.touch.call_args.args[3], 0.5)
-                    self.assertAlmostEqual(pads.ip.touch.call_args.args[4], 0.5)
-                    self.assertNotIn(0, pads.suspended_slots)
-                    self.assertEqual(pads.slots[0]["tracking"], 7)
+        pads.slots[0].update(center)
+        pads.update_slot(0)
+        self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, True))
+        self.assertAlmostEqual(pads.ip.touch.call_args.args[3], 0.5)
+        self.assertAlmostEqual(pads.ip.touch.call_args.args[4], 0.5)
+        self.assertNotIn(0, pads.suspended_slots)
+        self.assertEqual(pads.slots[0]["tracking"], 7)
+
+    def test_full_screen_routes_motion_across_center_and_taps_to_selected_pad(self):
+        for mode, side in (("fullLeft", "left"), ("fullRight", "right")):
+            with self.subTest(mode=mode):
+                pads = daemon.VirtualTrackpads.__new__(daemon.VirtualTrackpads)
+                pads.config = sanitize_config({"enabled": True, "mode": mode})
+                pads.device_env = {}
+                pads.x_range, pads.y_range = (0, 1920), (0, 1080)
+                pads.pixel_height, pads.aspect_ratio = 1080, 1920 / 1080
+                pads.pad_slots, pads.press_releases = {}, {}
+                pads.suspended_slots = set()
+                pads.last_zones, pads.last_positions, pads.last_touches = {}, {}, {}
+                pads.write_state, pads.ip, pads.mouse_click = Mock(), Mock(), Mock()
+                pads.slots = {0: {"tracking": 7, "x": 480, "y": 540}}
+                pads.update_slot(0)
+                self.assertEqual(pads.ip.touch.call_args.args, (side, 0, True, 0.25, 0.5))
+                pads.slots[0]["x"] = 1440
+                pads.update_slot(0)
+                self.assertEqual(pads.ip.touch.call_args.args, (side, 0, True, 0.75, 0.5))
+                self.assertEqual(pads.pad_slots[0][:2], (side, "full"))
+                pads.release_slot(0)
+                self.assertEqual(pads.ip.touch.call_args.args, (side, 0, False, 0.75, 0.5))
+                pads.mouse_click.click.assert_not_called()
+                # A stationary contact is still a click anywhere on the screen.
+                pads.slots[0] = {"tracking": 8, "x": 960, "y": 270}
+                pads.update_slot(0)
+                pads.release_slot(0)
+                pads.mouse_click.click.assert_called_once()
+                self.assertEqual(pads.ip.touch.call_args.args, (side, 0, False, 0.5, 0.25))
+                self.assertTrue(all(call.args[0] == side for call in pads.ip.touch.call_args_list))
 
     def test_720p_capture_uses_eight_physical_pixels_for_edge_gap(self):
         pads = daemon.VirtualTrackpads.__new__(daemon.VirtualTrackpads)

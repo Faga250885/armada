@@ -97,6 +97,9 @@ def should_capture_touch(config, session_active):
         config["enabled"] and (config["leftEnabled"] or config["rightEnabled"])
     )
 
+SCREEN_MODES = ("halves", "fullLeft", "fullRight")
+TRACKPAD_MODES = ("simple", "corners", "floating", *SCREEN_MODES)
+
 DEFAULT_CONFIG = {
     "enabled": False,
     "blockTouchscreen": False,
@@ -105,8 +108,6 @@ DEFAULT_CONFIG = {
     "shortcutButtons": ["L3", "R3"],
     "shortcutHoldSeconds": 3,
     "screen": "primary",
-    "touchRotation": "normal",
-    "touchMirror": False,
     "leftEnabled": True,
     "rightEnabled": True,
     "mode": "simple",
@@ -149,7 +150,7 @@ NUMBER_RANGES = {
 BOOLEAN_KEYS = (
     "enabled", "blockTouchscreen", "leftEnabled", "rightEnabled",
     "tapToClick", "limitToBounds", "centerDotEnabled",
-    "autoHide", "gameModeOnly", "shortcutEnabled", "touchMirror",
+    "autoHide", "gameModeOnly", "shortcutEnabled",
 )
 
 
@@ -173,11 +174,9 @@ def sanitize_config(value):
         result["shortcutHoldSeconds"] = value["shortcutHoldSeconds"]
     if value.get("screen") in ("primary", "secondary"):
         result["screen"] = value["screen"]
-    if value.get("touchRotation") in ("normal", "right", "upside_down", "left"):
-        result["touchRotation"] = value["touchRotation"]
     if value.get("backgroundStyle") in ("dots", "solid", "none"):
         result["backgroundStyle"] = value["backgroundStyle"]
-    if value.get("mode") in ("simple", "corners", "floating", "halves"):
+    if value.get("mode") in TRACKPAD_MODES:
         result["mode"] = value["mode"]
     elif value.get("fourPads") is True:
         # Preserve the layout selected by images created before modes existed.
@@ -185,6 +184,10 @@ def sanitize_config(value):
     if "enabled" not in value and (value.get("leftEnabled") is True or value.get("rightEnabled") is True):
         # Older images used the side toggles as the implicit master switch.
         result["enabled"] = True
+    if result["mode"] in SCREEN_MODES:
+        # Screen-wide modes own their sides, regardless of old zone toggles.
+        result["leftEnabled"] = result["mode"] != "fullRight"
+        result["rightEnabled"] = result["mode"] != "fullLeft"
     # A short tap always represents the physical click of a Steam Deck pad.
     result["tapToClick"] = True
     if result["blockTouchscreen"]:
@@ -209,8 +212,6 @@ def transform_touch(x, y, device_values, config):
     Gamescope's force_orientation uses left=90/right=270; its touchscreen
     transform is the inverse of the scanout rotation. Reuse that convention
     instead of introducing a separate per-device touchscreen orientation.
-    User layout rotation belongs in the shared hit-test/drawing geometry;
-    applying it here would move the input while leaving the visible pad behind.
     """
     panel_orientation = device_values.get("ARMADA_PANEL_ORIENTATION", "normal")
     automatic = {"left": "right", "right": "left"}.get(panel_orientation, panel_orientation)
@@ -218,39 +219,16 @@ def transform_touch(x, y, device_values, config):
     return clamp(x), clamp(y)
 
 
-def layout_to_screen(x, y, config):
-    """Project a normalized layout point onto the physical screen."""
-    x, y = rotate_touch(x, y, config.get("touchRotation", "normal"))
-    if config.get("touchMirror", False):
-        x = 1.0 - x
-    return x, y
-
-
-def screen_to_layout(x, y, config):
-    """Inverse of layout_to_screen, shared by all pointer hit tests."""
-    if config.get("touchMirror", False):
-        x = 1.0 - x
-    rotation = config.get("touchRotation", "normal")
-    inverse = {"left": "right", "right": "left"}.get(rotation, rotation)
-    return rotate_touch(x, y, inverse)
-
-
 def _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height):
-    """Return a normalized logical rectangle before rotation/mirroring.
-
-    A quarter-turn uses a swapped logical viewport. Keeping the side length in
-    physical pixels prevents square pads becoming rectangles on wide screens.
-    Floating anchors are always expressed in physical screen coordinates.
-    """
+    """Return a normalized screen rectangle with sizes and gaps in pixels."""
     logical_width, logical_height = float(pixel_height) * aspect_ratio, float(pixel_height)
-    if config.get("touchRotation") in ("left", "right"):
-        logical_width, logical_height = logical_height, logical_width
+    if zone == "full":
+        return 0.0, 0.0, 1.0, 1.0
     if zone == "half":
         return (0.0 if side == "left" else 0.5), 0.0, 0.5, 1.0
     size = config[f"{side}Size"] / 100.0 * pixel_height
     width, height = size / logical_width, size / logical_height
     if zone == "floating":
-        anchor_x, anchor_y = screen_to_layout(anchor_x, anchor_y, config)
         return anchor_x - width / 2, anchor_y - height / 2, width, height
     gap_x = config["edgeGap"] / logical_width
     gap_y = config["edgeGap"] / logical_height
@@ -262,18 +240,14 @@ def _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_hei
 def trackpad_rect(side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
     """Return the visible pad's physical pixel (x, y, width, height).
 
-    Drawing and touch handling deliberately share _layout_rect so every mode,
-    rotation, mirror setting and selected-screen resolution stays aligned.
+    Drawing and touch handling share _layout_rect so every mode and
+    selected-screen resolution stays aligned.
     """
     left, top, width, height = _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height)
-    first = layout_to_screen(left, top, config)
-    last = layout_to_screen(left + width, top + height, config)
     pixel_width = float(pixel_height) * aspect_ratio
     return (
-        min(first[0], last[0]) * pixel_width,
-        min(first[1], last[1]) * pixel_height,
-        abs(last[0] - first[0]) * pixel_width,
-        abs(last[1] - first[1]) * pixel_height,
+        left * pixel_width, top * pixel_height,
+        width * pixel_width, height * pixel_height,
     )
 
 
@@ -291,13 +265,17 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9, pixel_height=1080):
     """Return (side, corner, local_x, local_y) for an enabled pad zone."""
     if not config["enabled"]:
         return None
-    layout_x, _layout_y = screen_to_layout(x, y, config)
+    mode = config["mode"]
+    if mode in ("fullLeft", "fullRight"):
+        side = "left" if mode == "fullLeft" else "right"
+        if config[f"{side}Enabled"] and point_in_trackpad_bounds(x, y, side, "full", config):
+            return side, "full", x, y
+        return None
     for side in ("left", "right"):
         if not config[f"{side}Enabled"]:
             continue
-        mode = config["mode"]
         if mode in ("floating", "halves"):
-            if (side == "left" and layout_x <= 0.5) or (side == "right" and layout_x > 0.5):
+            if (side == "left" and x <= 0.5) or (side == "right" and x > 0.5):
                 if mode == "halves":
                     return (side, "half", *trackpad_coordinates(
                         x, y, side, "half", config, aspect_ratio=aspect_ratio, pixel_height=pixel_height))
@@ -313,17 +291,14 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9, pixel_height=1080):
 
 def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
     """Map a screen point to the selected virtual Steam Deck touchpad."""
-    x, y = screen_to_layout(x, y, config)
     left, top, width, height = _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height)
     if zone == "floating":
-        anchor_x, anchor_y = screen_to_layout(anchor_x, anchor_y, config)
         return clamp(0.5 + (x - anchor_x) / width), clamp(0.5 + (y - anchor_y) / height)
     return clamp((x - left) / width), clamp((y - top) / height)
 
 
 def point_in_trackpad_bounds(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
     """Return whether a screen point remains inside its assigned pad area."""
-    x, y = screen_to_layout(x, y, config)
     if zone == "half":
         return x <= 0.5 if side == "left" else x > 0.5
     left, top, width, height = _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height)

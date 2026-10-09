@@ -20,7 +20,7 @@ import armada_perf
 from armada_virtual_trackpads import DEFAULT_CONFIG as VIRTUAL_TRACKPADS_DEFAULTS
 from armada_virtual_trackpads import NUMBER_RANGES as VIRTUAL_TRACKPAD_NUMBER_RANGES
 from armada_virtual_trackpads import BOOLEAN_KEYS as VIRTUAL_TRACKPAD_BOOLEAN_KEYS
-from armada_virtual_trackpads import SHORTCUT_BUTTONS, game_mode_active, should_capture_touch
+from armada_virtual_trackpads import SCREEN_MODES, TRACKPAD_MODES, SHORTCUT_BUTTONS, game_mode_active, should_capture_touch
 from armada_virtual_trackpads import sanitize_config as sanitize_virtual_trackpads_config
 
 SOCKET = Path("/run/armada/control.sock")
@@ -606,7 +606,7 @@ def sync_virtual_trackpads(config=None, *, shortcut_notice=False):
     # when the user explicitly turns off Game Mode only.
     overlay = (
         capture and in_game_mode and config["enabled"]
-        and not config["blockTouchscreen"] and config["mode"] != "halves"
+        and not config["blockTouchscreen"] and config["mode"] not in SCREEN_MODES
     )
     overlay_key = config["screen"] if overlay else notice["screen"] if notice else None
     previous_overlay = VIRTUAL_TRACKPADS_LIFECYCLE.get("overlay", "unchecked")
@@ -666,8 +666,6 @@ def action_set_virtual_trackpads(request, *, shortcut_notice=False):
         )
         if starting_secondary and game_mode_active() and not game_mode_active(screen="secondary"):
             raise RuntimeError("enable the secondary screen before using virtual trackpads on it")
-    if requested["touchRotation"] not in ("normal", "right", "upside_down", "left"):
-        raise ValueError("invalid touch rotation")
     buttons = requested["shortcutButtons"]
     valid_shortcut = (
         isinstance(buttons, list) and 1 <= len(buttons) <= 4
@@ -678,7 +676,7 @@ def action_set_virtual_trackpads(request, *, shortcut_notice=False):
         raise ValueError("invalid shortcut buttons")
     if type(requested["shortcutHoldSeconds"]) is not int or requested["shortcutHoldSeconds"] not in (0, 3):
         raise ValueError("invalid shortcut activation delay")
-    if requested["mode"] not in ("simple", "corners", "floating", "halves"):
+    if requested["mode"] not in TRACKPAD_MODES:
         raise ValueError("invalid mode")
     if requested["backgroundStyle"] not in ("dots", "solid", "none"):
         raise ValueError("invalid background style")
@@ -686,6 +684,7 @@ def action_set_virtual_trackpads(request, *, shortcut_notice=False):
         value = requested[key]
         if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
             raise ValueError(f"invalid {key}")
+    requested = sanitize_virtual_trackpads_config(requested)
     # Steam only exposes the two pad inputs on the Steam Deck target.
     if requested["enabled"] and (requested["leftEnabled"] or requested["rightEnabled"]):
         current = action_get_controller_type({})["value"]

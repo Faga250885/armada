@@ -179,10 +179,10 @@ def render_worker(directory):
     pixels = {}
     paintable = None
     last_surface = None
-    rotations = [("right", False, "top-left"), ("upside_down", False, "top-right"),
-                 ("left", False, "bottom-right"), ("normal", False, "bottom-left"),
-                 ("normal", True, "bottom-right")]
-    rotation_index = 0
+    # Saved manual corrections from older builds must no longer move pads.
+    legacy_layouts = [("right", False), ("upside_down", False),
+                      ("left", False), ("normal", False), ("normal", True)]
+    legacy_index = 0
 
     def alpha_pixels(label):
         nonlocal last_surface
@@ -239,7 +239,7 @@ def render_worker(directory):
         assert alpha_at(app.width / 2, y) > 150, f"Missing chip background: {label}"
 
     def check():
-        nonlocal phase, phase_started, last_frames, paintable, rotation_index
+        nonlocal phase, phase_started, last_frames, paintable, legacy_index
         now = time.monotonic()
         try:
             assert now - started < 16, "Overlay did not complete rendering phases"
@@ -297,19 +297,20 @@ def render_worker(directory):
                 pixels["none"] = alpha_pixels("none")
                 assert pixels["none"] == 0, pixels
                 config.update(backgroundStyle="solid", backgroundOpacity=50,
-                              rightEnabled=False, touchRotation=rotations[0][0])
+                              rightEnabled=False, touchRotation=legacy_layouts[0][0])
                 config_path.write_text(json.dumps(config))
                 phase, phase_started = 6, now
             elif phase == 6 and now - phase_started >= 0.35:
-                rotation, mirror, corner = rotations[rotation_index]
-                alpha_pixels(f"rotation-{rotation}-mirror-{mirror}")
+                rotation, mirror = legacy_layouts[legacy_index]
+                corner = "bottom-left"
+                alpha_pixels(f"legacy-rotation-{rotation}-mirror-{mirror}")
                 corners = corner_alpha()
                 assert corners[corner] > 0, (rotation, mirror, corners)
                 assert all(value == 0 for key, value in corners.items() if key != corner), corners
-                rotation_index += 1
-                if rotation_index < len(rotations):
-                    config.update(touchRotation=rotations[rotation_index][0],
-                                  touchMirror=rotations[rotation_index][1])
+                legacy_index += 1
+                if legacy_index < len(legacy_layouts):
+                    config.update(touchRotation=legacy_layouts[legacy_index][0],
+                                  touchMirror=legacy_layouts[legacy_index][1])
                     config_path.write_text(json.dumps(config))
                     phase_started = now
                 else:
@@ -338,6 +339,29 @@ def render_worker(directory):
     if errors:
         raise errors[0]
     assert phase == 9, f"Overlay exited prematurely at phase {phase}"
+
+
+class OverlayHeadlessTests(unittest.TestCase):
+    def test_screen_modes_and_disabled_pads_exit_without_graphics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            environment = dict(os.environ,
+                               PYTHONPATH=str(LIBRARY),
+                               ARMADA_DEVICE_ENV=str(Path(directory) / "no-device-env"),
+                               ARMADA_VIRTUAL_TRACKPADS_CONFIG_PATH=str(config_path),
+                               ARMADA_VIRTUAL_TRACKPADS_NOTICE_PATH=str(Path(directory) / "no-notice"))
+            for key in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY"):
+                environment.pop(key, None)
+            for config in ({"enabled": False}, *(
+                {"enabled": True, "mode": mode, "centerDotEnabled": True, "autoHide": False}
+                for mode in ("halves", "fullLeft", "fullRight")
+            )):
+                with self.subTest(config=config):
+                    config_path.write_text(json.dumps(config))
+                    result = subprocess.run([sys.executable, str(OVERLAY)], env=environment,
+                                            capture_output=True, text=True, timeout=3)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotIn("using", result.stdout)
 
 
 class OverlaySessionSelectionTests(unittest.TestCase):
@@ -517,7 +541,10 @@ class OverlayRuntimeTests(unittest.TestCase):
         self.assert_no_render_errors(output + errors)
 
     def test_disabled_service_exits_without_graphics(self):
-        for config in ({"enabled": False}, {"enabled": True, "mode": "halves", "centerDotEnabled": True}):
+        for config in ({"enabled": False}, *(
+            {"enabled": True, "mode": mode, "centerDotEnabled": True}
+            for mode in ("halves", "fullLeft", "fullRight")
+        )):
             with self.subTest(config=config):
                 self.config_path.write_text(json.dumps(config))
                 result = subprocess.run(
@@ -529,7 +556,9 @@ class OverlayRuntimeTests(unittest.TestCase):
                 self.assert_no_render_errors(result.stdout + result.stderr)
 
     def test_disabled_shortcut_notice_bootstraps_and_exits(self):
-        for config in ({"enabled": False}, {"enabled": True, "mode": "halves"}):
+        for config in ({"enabled": False}, *(
+            {"enabled": True, "mode": mode} for mode in ("halves", "fullLeft", "fullRight")
+        )):
             with self.subTest(config=config):
                 self.config_path.write_text(json.dumps(config))
                 now = time.time()

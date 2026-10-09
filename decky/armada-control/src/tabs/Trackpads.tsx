@@ -37,6 +37,7 @@ export function Trackpads({ config, setConfig }: {
               current.virtualTrackpads.blockTouchscreen === latest.blockTouchscreen &&
               current.virtualTrackpads.leftEnabled === latest.leftEnabled &&
               current.virtualTrackpads.rightEnabled === latest.rightEnabled &&
+              current.virtualTrackpads.mode === latest.mode &&
               current.virtualTrackpads.screen === latest.screen &&
               current.virtualTrackpads.secondaryAvailable === latest.secondaryAvailable
             )) return current;
@@ -135,15 +136,17 @@ export function Trackpads({ config, setConfig }: {
     return <Field label={t("trackpads.title")} description={t("trackpads.unsupported")} />;
   }
   const pads = config.virtualTrackpads;
-  const splitScreen = pads.mode === "halves";
+  const screenMode = pads.mode === "halves" || pads.mode === "fullLeft" || pads.mode === "fullRight";
   const modeDescription = t(`trackpads.mode${pads.mode[0].toUpperCase()}${pads.mode.slice(1)}Description` as
     | "trackpads.modeSimpleDescription"
     | "trackpads.modeCornersDescription"
     | "trackpads.modeFloatingDescription"
-    | "trackpads.modeHalvesDescription");
+    | "trackpads.modeHalvesDescription"
+    | "trackpads.modeFullLeftDescription"
+    | "trackpads.modeFullRightDescription");
   const deckControllerSelected = config.controllerType === "deck-uhid";
   const settingsDisabled = !pads.enabled || resetting;
-  const controlsDisabled = settingsDisabled || splitScreen;
+  const controlsDisabled = settingsDisabled || screenMode;
   const visualDisabled = controlsDisabled;
   const centerDotDisabled = visualDisabled || pads.mode === "floating";
   return (
@@ -183,13 +186,17 @@ export function Trackpads({ config, setConfig }: {
             { data: "corners", label: t("trackpads.modeCorners") },
             { data: "floating", label: t("trackpads.modeFloating") },
             { data: "halves", label: t("trackpads.modeHalves") },
+            { data: "fullLeft", label: t("trackpads.modeFullLeft") },
+            { data: "fullRight", label: t("trackpads.modeFullRight") },
           ]}
-          onChange={(mode) => update(mode === "halves"
-            ? { mode, leftEnabled: true, rightEnabled: true }
-            : { mode }, true)}
+          onChange={(mode) => update(mode === "fullLeft" || mode === "fullRight"
+            ? { mode, leftEnabled: mode === "fullLeft", rightEnabled: mode === "fullRight" }
+            : mode === "halves" || screenMode
+              ? { mode, leftEnabled: true, rightEnabled: true }
+              : { mode }, true)}
         />
         <div className="armada-trackpads-note">{modeDescription}</div>
-        {splitScreen && <div className="armada-trackpads-note">{t("trackpads.halvesInvisible")}</div>}
+        {screenMode && <div className="armada-trackpads-note">{t("trackpads.screenModeSettings")}</div>}
       </PanelSection>
       <PanelSection title={t("trackpads.shortcut")}>
         <ToggleRow
@@ -233,26 +240,6 @@ export function Trackpads({ config, setConfig }: {
           onChange={(screen) => update({ screen }, true)}
         />
         <div className="armada-trackpads-note">{t(pads.secondaryAvailable ? "trackpads.screenDescription" : "trackpads.screenSingle")}</div>
-        <SelectEdit
-          label={t("trackpads.touchRotation")}
-          value={pads.touchRotation}
-          disabled={resetting}
-          options={[
-            { data: "normal", label: t("trackpads.rotationNormal") },
-            { data: "right", label: t("trackpads.rotationRight") },
-            { data: "upside_down", label: t("trackpads.rotationInverted") },
-            { data: "left", label: t("trackpads.rotationLeft") },
-          ]}
-          onChange={(touchRotation) => update({ touchRotation }, true)}
-        />
-        <div className="armada-trackpads-note">{t("trackpads.rotationDescription")}</div>
-        <ToggleRow
-          label={t("trackpads.touchMirror")}
-          description={t("trackpads.touchMirrorDescription")}
-          value={pads.touchMirror}
-          disabled={resetting}
-          onChange={(touchMirror) => update({ touchMirror }, true)}
-        />
       </PanelSection>
       <PanelSection title={t("trackpads.zones")}>
         <ToggleRow

@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, "/usr/lib/armada")
 from armada_overlay_session import discover_gamescope_environment, screen_for_device
-from armada_virtual_trackpads import sanitize_config, trackpad_rect
+from armada_virtual_trackpads import SCREEN_MODES, sanitize_config, trackpad_rect
 
 
 CONFIG_PATH = Path(os.environ.get("ARMADA_VIRTUAL_TRACKPADS_CONFIG_PATH", "/etc/armada/virtual-trackpads.json"))
@@ -72,7 +72,7 @@ def current_notice(now=None):
 
 
 def overlay_screen(config, notice):
-    if overlay_enabled(config) and config.get("mode") != "halves":
+    if overlay_enabled(config) and config.get("mode") not in SCREEN_MODES:
         return config.get("screen", "primary")
     return notice.get("screen")
 
@@ -262,7 +262,7 @@ class TrackpadOverlay(Gtk.Application):
         if config_changed:
             self.preview_until = now + float(self.config.get("hideDelay", 1))
         self.state = load_json(STATE_PATH, {})
-        enabled = overlay_enabled(self.config) and self.config.get("mode") != "halves"
+        enabled = overlay_enabled(self.config) and self.config.get("mode") not in SCREEN_MODES
         previewing = enabled and now < self.preview_until
         auto_hide = bool(self.config.get("autoHide", True))
         hold_seconds = float(self.config.get("hideDelay", 1))
@@ -358,7 +358,7 @@ class TrackpadOverlay(Gtk.Application):
         if not self.reported_frame:
             print("virtual-trackpads-overlay: first GTK/Cairo frame rendered", flush=True)
             self.reported_frame = True
-        if not overlay_enabled(self.config) or self.config.get("mode") == "halves":
+        if not overlay_enabled(self.config) or self.config.get("mode") in SCREEN_MODES:
             self.draw_notice(context)
             return
         previewing = time.monotonic() < self.preview_until

@@ -131,11 +131,9 @@ export interface VirtualTrackpadsConfig {
   shortcutButtons: TrackpadShortcutButton[];
   shortcutHoldSeconds: 0 | 3;
   screen: "primary" | "secondary";
-  touchRotation: "normal" | "right" | "upside_down" | "left";
-  touchMirror: boolean;
   leftEnabled: boolean;
   rightEnabled: boolean;
-  mode: "simple" | "corners" | "floating" | "halves";
+  mode: "simple" | "corners" | "floating" | "halves" | "fullLeft" | "fullRight";
   tapToClick: boolean;
   limitToBounds: boolean;
   leftSize: number;

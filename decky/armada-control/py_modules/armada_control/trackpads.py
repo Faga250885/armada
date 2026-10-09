@@ -11,8 +11,6 @@ DEFAULT = {
     "shortcutButtons": ["L3", "R3"],
     "shortcutHoldSeconds": 3,
     "screen": "primary",
-    "touchRotation": "normal",
-    "touchMirror": False,
     "leftEnabled": True,
     "rightEnabled": True,
     "mode": "simple",
