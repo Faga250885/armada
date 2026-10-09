@@ -106,6 +106,7 @@
 
 # ============== PWM ==============
 0054_sn3112-pwm-driver.patch
+0054c-pwm-sn3112-power-down-across-system-suspend.patch
 
 # ============== SoC / Platform ==============
 20260424_neil_armstrong_arm64_dts_qcom_sm8_456_50_add_missing_cx_power_domain_to_gcc.patch
