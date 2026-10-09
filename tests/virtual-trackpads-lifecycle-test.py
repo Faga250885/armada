@@ -159,7 +159,7 @@ class LifecycleTests(unittest.TestCase):
         control.sync_virtual_trackpads(config)
         self.assertEqual(self.actions()[0], ["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE])
 
-    def test_shortcut_off_keeps_only_overlay_until_notice_expires(self):
+    def test_shortcut_off_recovers_overlay_that_exited_before_notice_publication(self):
         config = sanitize_config({"enabled": True})
         control.sync_virtual_trackpads(config)
         self.run.reset_mock()
@@ -168,7 +168,11 @@ class LifecycleTests(unittest.TestCase):
             config["enabled"] = False
             control.sync_virtual_trackpads(config, shortcut_notice=True)
             self.assertEqual(self.actions(), [["stop", control.VIRTUAL_TRACKPADS_SERVICE]])
-            self.session.assert_not_called()
+            # The overlay can observe the persisted off config and exit while
+            # stopping capture. The cached same-screen key must not suppress
+            # its restart after the notice has been published.
+            self.assertIsNone(control.VIRTUAL_TRACKPADS_LIFECYCLE.get("capture"))
+            self.assertEqual(self.session.call_args.args, ("restart", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
             notice = json.loads(self.notice_path.read_text())
             self.assertFalse(notice["enabled"])
             self.assertEqual(notice["expires"], 102.0)
@@ -207,7 +211,7 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(control.time, "time", return_value=102.1):
             control.sync_virtual_trackpads(config, shortcut_notice=True)
         self.run.assert_not_called()
-        self.assertEqual(self.session.call_args.args, ("start", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+        self.assertEqual(self.session.call_args.args, ("restart", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
         self.assertAlmostEqual(json.loads(self.notice_path.read_text())["expires"], 104.1)
 
     def test_off_notice_falls_back_to_primary_when_secondary_session_closed(self):
@@ -237,6 +241,19 @@ class LifecycleTests(unittest.TestCase):
             with self.subTest(value=value), patch.object(control.time, "time", return_value=100.0):
                 self.notice_path.write_text(json.dumps(value))
                 self.assertIsNone(control.virtual_trackpads_notice())
+
+    def test_notice_timestamps_are_normalized_before_lifecycle_deadline_comparison(self):
+        self.notice_path.write_text(json.dumps({
+            "enabled": False, "created": "100.0", "expires": "102.0", "screen": "primary",
+        }))
+        with patch.object(control.time, "time", return_value=100.5):
+            notice = control.virtual_trackpads_notice()
+            self.assertIsInstance(notice["created"], float)
+            self.assertIsInstance(notice["expires"], float)
+            control.sync_virtual_trackpads(sanitize_config({}))
+        with patch.object(control.time, "time", return_value=102.1):
+            control.sync_virtual_trackpads(sanitize_config({}))
+        self.assertEqual(self.session.call_args.args, ("stop", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
 
 
 class ConfigurationTests(unittest.TestCase):
