@@ -222,19 +222,17 @@ export function Trackpads({ config, setConfig }: {
         />
       </PanelSection>
       <PanelSection title={t("trackpads.touchscreen")}>
-        {pads.secondaryAvailable && <>
-          <SelectEdit
-            label={t("trackpads.screen")}
-            value={pads.screen}
-            disabled={resetting}
-            options={[
-              { data: "primary", label: t("trackpads.screenPrimary") },
-              { data: "secondary", label: t("trackpads.screenSecondary") },
-            ]}
-            onChange={(screen) => update({ screen }, true)}
-          />
-          <div className="armada-trackpads-note">{t("trackpads.screenDescription")}</div>
-        </>}
+        <SelectEdit
+          label={t("trackpads.screen")}
+          value={pads.screen}
+          disabled={resetting || !pads.secondaryAvailable}
+          options={[
+            { data: "primary", label: t("trackpads.screenPrimary") },
+            ...(pads.secondaryAvailable ? [{ data: "secondary", label: t("trackpads.screenSecondary") }] : []),
+          ]}
+          onChange={(screen) => update({ screen }, true)}
+        />
+        <div className="armada-trackpads-note">{t(pads.secondaryAvailable ? "trackpads.screenDescription" : "trackpads.screenSingle")}</div>
         <SelectEdit
           label={t("trackpads.touchRotation")}
           value={pads.touchRotation}
