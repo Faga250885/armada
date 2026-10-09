@@ -119,27 +119,35 @@ export interface RgbConfig {
   saturation: number;
 }
 
+export type TrackpadShortcutButton = "A" | "B" | "X" | "Y" | "L1" | "R1" | "L2" | "R2" | "L3" | "R3" | "Select" | "Start" | "Steam";
+
 export interface VirtualTrackpadsConfig {
   supported: boolean;
+  secondaryAvailable?: boolean;
   enabled: boolean;
-    blockTouchscreen: boolean;
-    gameModeOnly: boolean;
+  blockTouchscreen: boolean;
+  gameModeOnly: boolean;
+  shortcutEnabled: boolean;
+  shortcutButtons: TrackpadShortcutButton[];
+  shortcutHoldSeconds: 0 | 3;
+  screen: "primary" | "secondary";
+  touchRotation: "normal" | "right" | "upside_down" | "left";
+  touchMirror: boolean;
   leftEnabled: boolean;
   rightEnabled: boolean;
   mode: "simple" | "corners" | "floating" | "halves";
   tapToClick: boolean;
   limitToBounds: boolean;
-  deckLikeSize: boolean;
   leftSize: number;
   rightSize: number;
   edgeGap: number;
   hapticStrength: number;
-    borderOpacity: number;
-    borderWidth: number;
-    backgroundStyle: "dots" | "solid" | "none";
-    backgroundOpacity: number;
-    autoHide: boolean;
-    hideDelay: number;
+  borderOpacity: number;
+  borderWidth: number;
+  backgroundStyle: "dots" | "solid" | "none";
+  backgroundOpacity: number;
+  autoHide: boolean;
+  hideDelay: number;
   borderRadius: number;
   dotSize: number;
   dotGap: number;
@@ -147,6 +155,8 @@ export interface VirtualTrackpadsConfig {
   centerDotSize: number;
   centerDotOpacity: number;
 }
+
+export type EditableTrackpadsConfig = Omit<VirtualTrackpadsConfig, "supported" | "secondaryAvailable">;
 
 export interface VirtualTrackpadsState {
   leftActive: boolean;

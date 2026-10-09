@@ -19,7 +19,8 @@ import armada_game_tweaks
 import armada_perf
 from armada_virtual_trackpads import DEFAULT_CONFIG as VIRTUAL_TRACKPADS_DEFAULTS
 from armada_virtual_trackpads import NUMBER_RANGES as VIRTUAL_TRACKPAD_NUMBER_RANGES
-from armada_virtual_trackpads import apply_deck_like_size
+from armada_virtual_trackpads import BOOLEAN_KEYS as VIRTUAL_TRACKPAD_BOOLEAN_KEYS
+from armada_virtual_trackpads import SHORTCUT_BUTTONS, game_mode_active, should_capture_touch
 from armada_virtual_trackpads import sanitize_config as sanitize_virtual_trackpads_config
 
 SOCKET = Path("/run/armada/control.sock")
@@ -40,6 +41,9 @@ SWIPE_GESTURES_CONFIG = Path("/etc/armada/swipe-gestures.conf")
 VIRTUAL_TRACKPADS_CONFIG = Path("/etc/armada/virtual-trackpads.json")
 VIRTUAL_TRACKPADS_STATE = Path("/run/armada/virtual-trackpads-state.json")
 VIRTUAL_TRACKPADS_SERVICE = "armada-virtual-trackpads.service"
+VIRTUAL_TRACKPADS_SHORTCUT_SERVICE = "armada-virtual-trackpads-shortcut.service"
+VIRTUAL_TRACKPADS_OVERLAY_SERVICE = "armada-virtual-trackpads-overlay.service"
+VIRTUAL_TRACKPADS_LIFECYCLE = {}
 SLEEP_CONFIG = Path("/etc/armada/sleep.conf")
 SUSPEND_MODE_KEY = "suspend_mode"
 NM_IGNORE_SLEEP = Path("/etc/NetworkManager/ignore-sleep")
@@ -392,7 +396,7 @@ def action_set_controller_type(request):
         raise ValueError("invalid controller type")
     if value != "deck-uhid":
         pads = virtual_trackpads_config()
-        if pads["leftEnabled"] or pads["rightEnabled"]:
+        if pads["enabled"] and (pads["leftEnabled"] or pads["rightEnabled"]):
             raise RuntimeError("Steam Deck controller emulation is required by virtual trackpads")
     run(["/usr/libexec/armada/controller-type", "set", value])
     result = subprocess.check_output(["/usr/libexec/armada/controller-type", "get"], text=True, timeout=5).strip()
@@ -515,12 +519,59 @@ def virtual_trackpads_config():
         value = json.loads(VIRTUAL_TRACKPADS_CONFIG.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         value = {}
-    return apply_deck_like_size(sanitize_virtual_trackpads_config(value), device_env())
+    config = sanitize_virtual_trackpads_config(value)
+    # A configuration copied from a dual-screen handheld must remain usable
+    # on a single-screen device. Explicit unsupported selections are rejected.
+    if config["screen"] == "secondary" and not bottom_screen_supported():
+        config["screen"] = "primary"
+    return config
+
+
+def sync_virtual_trackpads(config=None):
+    """Manage optional workers from the existing control service event loop.
+
+    File/session checks reuse the control daemon's existing wakeup. No input,
+    rendering, uinput or haptic resources remain in this process while off.
+    """
+    config = config or virtual_trackpads_config()
+    in_game_mode = game_mode_active()
+    capture = should_capture_touch(config, in_game_mode)
+    if in_game_mode and config["screen"] == "secondary" and not game_mode_active(screen="secondary"):
+        capture = False
+    capture_key = json.dumps(config, sort_keys=True) if capture else None
+    if VIRTUAL_TRACKPADS_LIFECYCLE.get("capture", "unchecked") != capture_key:
+        run(["/usr/bin/systemctl", "reload-or-restart" if capture else "stop",
+             VIRTUAL_TRACKPADS_SERVICE], timeout=10)
+        VIRTUAL_TRACKPADS_LIFECYCLE["capture"] = capture_key
+
+    shortcut_key = (
+        (tuple(config["shortcutButtons"]), config["shortcutHoldSeconds"])
+        if config["shortcutEnabled"] else None
+    )
+    if VIRTUAL_TRACKPADS_LIFECYCLE.get("shortcut", "unchecked") != shortcut_key:
+        run(["/usr/bin/systemctl", "reload-or-restart" if shortcut_key else "stop",
+             VIRTUAL_TRACKPADS_SHORTCUT_SERVICE], timeout=10)
+        VIRTUAL_TRACKPADS_LIFECYCLE["shortcut"] = shortcut_key
+
+    # Gamescope owns the visual overlay; Desktop still permits trackpad input
+    # when the user explicitly turns off Game Mode only.
+    overlay = (
+        capture and in_game_mode and config["enabled"]
+        and not config["blockTouchscreen"] and config["mode"] != "halves"
+    )
+    overlay_key = config["screen"] if overlay else None
+    if VIRTUAL_TRACKPADS_LIFECYCLE.get("overlay", "unchecked") != overlay_key:
+        action = "restart" if overlay else "stop"
+        result = session_systemctl(action, VIRTUAL_TRACKPADS_OVERLAY_SERVICE, check=False, timeout=10)
+        # There may be no user manager yet during boot. Retry once it exists.
+        if result.returncode == 0:
+            VIRTUAL_TRACKPADS_LIFECYCLE["overlay"] = overlay_key
 
 
 def action_get_virtual_trackpads(request):
     result = virtual_trackpads_config()
     result["supported"] = True
+    result["secondaryAvailable"] = bottom_screen_supported()
     return result
 
 
@@ -531,14 +582,38 @@ def action_set_virtual_trackpads(request):
     required = set(VIRTUAL_TRACKPADS_DEFAULTS)
     if set(requested) != required:
         raise ValueError("incomplete virtual trackpad configuration")
-    for key in ("enabled", "blockTouchscreen", "gameModeOnly", "leftEnabled", "rightEnabled", "tapToClick", "limitToBounds", "deckLikeSize", "centerDotEnabled", "autoHide"):
+    for key in VIRTUAL_TRACKPAD_BOOLEAN_KEYS:
         if not isinstance(requested[key], bool):
             raise ValueError(f"invalid {key}")
     requested = dict(requested)
     requested["tapToClick"] = True
     if requested["blockTouchscreen"]:
         requested["enabled"] = False
-    requested = apply_deck_like_size(requested, device_env())
+    if requested["screen"] not in ("primary", "secondary"):
+        raise ValueError("invalid screen")
+    if requested["screen"] == "secondary" and not bottom_screen_supported():
+        raise ValueError("secondary touchscreen is not supported on this device")
+    if requested["screen"] == "secondary" and (requested["enabled"] or requested["blockTouchscreen"]):
+        previous = virtual_trackpads_config()
+        starting_secondary = (
+            previous["screen"] != "secondary"
+            or requested["enabled"] and not previous["enabled"]
+            or requested["blockTouchscreen"] and not previous["blockTouchscreen"]
+        )
+        if starting_secondary and game_mode_active() and not game_mode_active(screen="secondary"):
+            raise RuntimeError("enable the secondary screen before using virtual trackpads on it")
+    if requested["touchRotation"] not in ("normal", "right", "upside_down", "left"):
+        raise ValueError("invalid touch rotation")
+    buttons = requested["shortcutButtons"]
+    valid_shortcut = (
+        isinstance(buttons, list) and 1 <= len(buttons) <= 4
+        and all(isinstance(button, str) and button in SHORTCUT_BUTTONS for button in buttons)
+        and len(set(buttons)) == len(buttons)
+    )
+    if not valid_shortcut:
+        raise ValueError("invalid shortcut buttons")
+    if type(requested["shortcutHoldSeconds"]) is not int or requested["shortcutHoldSeconds"] not in (0, 3):
+        raise ValueError("invalid shortcut activation delay")
     if requested["mode"] not in ("simple", "corners", "floating", "halves"):
         raise ValueError("invalid mode")
     if requested["backgroundStyle"] not in ("dots", "solid", "none"):
@@ -553,11 +628,23 @@ def action_set_virtual_trackpads(request):
         if current != "deck-uhid":
             raise RuntimeError("select Steam Deck controller emulation before enabling virtual trackpads")
     atomic_write(VIRTUAL_TRACKPADS_CONFIG, json.dumps(requested, separators=(",", ":")) + "\n")
-    run(["/usr/bin/systemctl", "reload-or-restart", VIRTUAL_TRACKPADS_SERVICE], timeout=10)
+    sync_virtual_trackpads(requested)
     result = dict(requested)
     result["supported"] = True
     result["controllerType"] = action_get_controller_type({})["value"]
+    result["secondaryAvailable"] = bottom_screen_supported()
     return result
+
+
+def action_toggle_virtual_trackpads(_request):
+    config = virtual_trackpads_config()
+    if not config["shortcutEnabled"]:
+        raise RuntimeError("virtual trackpad shortcut is disabled")
+    config["enabled"] = not config["enabled"]
+    config["blockTouchscreen"] = False
+    if config["enabled"] and not (config["leftEnabled"] or config["rightEnabled"]):
+        config["leftEnabled"] = config["rightEnabled"] = True
+    return action_set_virtual_trackpads({"config": config})
 
 
 def action_reset_virtual_trackpads(request):
@@ -958,6 +1045,7 @@ ACTIONS = {
     "set_swipe_gestures_enabled": action_set_swipe_gestures_enabled,
     "get_virtual_trackpads": action_get_virtual_trackpads,
     "set_virtual_trackpads": action_set_virtual_trackpads,
+    "toggle_virtual_trackpads": action_toggle_virtual_trackpads,
     "reset_virtual_trackpads": action_reset_virtual_trackpads,
     "get_virtual_trackpads_state": action_get_virtual_trackpads_state,
     "set_controller_type": action_set_controller_type,
@@ -1072,7 +1160,15 @@ def main():
 
     selector.register(control, selectors.EVENT_READ, accept_control)
     selector.register(session, selectors.EVENT_READ, accept_session)
+    lifecycle_error = None
     while True:
+        try:
+            sync_virtual_trackpads()
+            lifecycle_error = None
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            if str(error) != lifecycle_error:
+                print(f"armada-control: virtual trackpad workers: {error}", flush=True)
+                lifecycle_error = str(error)
         for key, _events in selector.select(BOTTOM_SCREEN_BRIGHTNESS_RESTORE_INTERVAL):
             key.data()
         restore_bottom_screen_brightness(bottom_screen_backlight)

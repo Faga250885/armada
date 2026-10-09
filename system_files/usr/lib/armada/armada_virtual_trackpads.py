@@ -1,5 +1,5 @@
-import math
 import os
+import re
 from pathlib import Path
 
 try:
@@ -8,61 +8,52 @@ except ImportError:  # Local Windows development; deployed Armada systems use Li
     pwd = None
 
 
-DECK_TRACKPAD_SIZE_MM = 32.5
-
-# Nominal primary-panel diagonals and native pixel dimensions.  These are
-# model-specific fallbacks for internal DSI panels, which commonly have no
-# EDID.  The two axes are used only for their aspect ratio, not as millimetres.
-# Sources: https://www.ayaneo.com/product/AYANEO-Pocket-S2
-# https://www.ayaneo.com/product/AYANEO-Pocket-ACE
-# https://www.ayntec.com/products/ayn-thor
-# https://www.ayntec.com/products/ayn-odin-3
-# https://www.goretroid.com/products/retroid-pocket-6-handheld
-# https://www.goretroid.com/collections/retro-game-system/products/retroid-pocket-nova-handheld
-# The active visible area of the original Pocket Mini is 3.7 inches; V2
-# exposes the larger 3.92-inch panel.  These figures are nominal, not a
-# calibration of each individual unit.
-PANEL_SPECS = {
-    "ayaneo-pocket-ace": (4.5, 1620, 1080),
-    "ayaneo-pocket-dmg": (3.92, 1240, 1080),
-    "ayaneo-pocket-ds": (7.0, 1920, 1080),  # Gamescope's upper screen.
-    "ayaneo-pocket-evo": (7.0, 1920, 1080),
-    "ayaneo-pocket-micro2": (3.5, 960, 640),
-    "ayaneo-pocket-s1k": (6.0, 1920, 1080),
-    "ayaneo-pocket-s2k": (6.0, 2560, 1440),
-    "ayaneo-pocket-s2": (6.3, 2560, 1440),
-    "ayn-odin-2": (6.0, 1920, 1080),
-    "ayn-odin-2-mini": (5.0, 1920, 1080),
-    "ayn-odin-2-portal": (7.0, 1920, 1080),
-    "ayn-odin-3": (6.0, 1920, 1080),
-    "ayn-thor": (6.0, 1920, 1080),
-    "ayn-thor-lite": (6.0, 1920, 1080),
-    "konkr-pocket-fit": (6.0, 1920, 1080),
-    "konkr-pocket-fit-elite": (6.0, 1920, 1080),
-    "retroid-pocket-5": (5.5, 1920, 1080),
-    "retroid-pocket-5-visionox": (5.5, 1920, 1080),
-    "retroid-pocket-flip2": (5.5, 1920, 1080),
-    "retroid-pocket-flip2-visionox": (5.5, 1920, 1080),
-    "retroid-pocket-mini": (3.7, 1280, 960),
-    "retroid-pocket-mini-v2": (3.92, 1240, 1080),
-    "retroid-pocket-6": (5.5, 1920, 1080),
-    "retroid-pocket-nova": (4.5, 1280, 960),
+SHORTCUT_BUTTONS = {
+    "A": 304, "B": 305, "X": 308, "Y": 307,
+    "L1": 310, "R1": 311, "L2": 312, "R2": 313,
+    "Select": 314, "Start": 315, "Steam": 316, "L3": 317, "R3": 318,
 }
 
 
-def panel_spec(device_values):
-    if not isinstance(device_values, dict):
-        return None
-    return PANEL_SPECS.get(device_values.get("ARMADA_DEVICE_ID"))
+def display_dimensions(device_values, screen="primary", drm_root=Path("/sys/class/drm")):
+    """Read the selected connector's pixel mode; no model/physical-size table."""
+    values = device_values if isinstance(device_values, dict) else {}
+    connector = values.get("ARMADA_SECONDARY_CONNECTOR" if screen == "secondary" else "ARMADA_PRIMARY_CONNECTOR", "")
+    candidates = sorted(drm_root.glob(f"card*-{connector}/modes")) if connector else []
+    if not connector and screen == "primary":
+        candidates = sorted(drm_root.glob("card*-DSI-*/modes")) + sorted(drm_root.glob("card*-eDP-*/modes"))
+    for path in candidates:
+        try:
+            status = path.with_name("status")
+            if status.exists() and status.read_text().strip() == "disconnected":
+                continue
+            for line in path.read_text().splitlines():
+                match = re.fullmatch(r"(\d+)x(\d+)", line.strip())
+                if match:
+                    width, height = map(int, match.groups())
+                    if width > 0 and height > 0:
+                        # Armada's internal Game Mode screens are landscape.
+                        return max(width, height), min(width, height)
+        except OSError:
+            continue
+    return 1920, 1080
 
 
-def panel_aspect_ratio(device_values):
-    spec = panel_spec(device_values)
-    return spec[1] / spec[2] if spec else 16 / 9
+def panel_aspect_ratio(device_values, screen="primary", drm_root=Path("/sys/class/drm")):
+    width, height = display_dimensions(device_values, screen, drm_root)
+    return width / height
+
+
+def sanitize_shortcut_buttons(value):
+    if (isinstance(value, list) and 1 <= len(value) <= 4
+            and all(isinstance(button, str) and button in SHORTCUT_BUTTONS for button in value)
+            and len(set(value)) == len(value)):
+        return list(value)
+    return ["L3", "R3"]
 
 
 class ShortcutHold:
-    """Fire once after both stick buttons have remained down continuously."""
+    """Fire once per chord, immediately or after a continuous hold."""
 
     def __init__(self, seconds=3.0):
         self.seconds = seconds
@@ -70,7 +61,11 @@ class ShortcutHold:
         self.armed = True
 
     def update(self, left, right, now):
-        if not (left and right):
+        pressed = {button for button, down in (("left", left), ("right", right)) if down}
+        self.update_pressed(pressed, {"left", "right"}, now)
+
+    def update_pressed(self, pressed, required, now):
+        if not required or not set(required).issubset(pressed):
             self.started = None
             self.armed = True
         elif self.started is None:
@@ -83,13 +78,14 @@ class ShortcutHold:
         return False
 
 
-def game_mode_active(user=None, runtime_root=Path("/run/user")):
-    """The session's primary Gamescope socket exists only in Steam Game Mode."""
+def game_mode_active(user=None, runtime_root=Path("/run/user"), screen="primary"):
+    """Use the selected session's live socket, not a stale environment value."""
     if pwd is None:
         return False
     try:
         account = pwd.getpwnam(user or os.environ.get("ARMADA_SESSION_USER", "armada"))
-        return (runtime_root / str(account.pw_uid) / "gamescope-primary").is_socket()
+        name = "gamescope-secondary" if screen == "secondary" else "gamescope-primary"
+        return (runtime_root / str(account.pw_uid) / name).is_socket()
     except (KeyError, OSError):
         return False
 
@@ -105,12 +101,17 @@ DEFAULT_CONFIG = {
     "enabled": False,
     "blockTouchscreen": False,
     "gameModeOnly": True,
+    "shortcutEnabled": True,
+    "shortcutButtons": ["L3", "R3"],
+    "shortcutHoldSeconds": 3,
+    "screen": "primary",
+    "touchRotation": "normal",
+    "touchMirror": False,
     "leftEnabled": True,
     "rightEnabled": True,
     "mode": "simple",
     "tapToClick": True,
     "limitToBounds": True,
-    "deckLikeSize": True,
     "leftSize": 35,
     "rightSize": 35,
     "edgeGap": 8,
@@ -147,8 +148,8 @@ NUMBER_RANGES = {
 
 BOOLEAN_KEYS = (
     "enabled", "blockTouchscreen", "leftEnabled", "rightEnabled",
-    "tapToClick", "limitToBounds", "deckLikeSize", "centerDotEnabled",
-    "autoHide", "gameModeOnly",
+    "tapToClick", "limitToBounds", "centerDotEnabled",
+    "autoHide", "gameModeOnly", "shortcutEnabled", "touchMirror",
 )
 
 
@@ -156,66 +157,8 @@ def clamp(value, minimum=0.0, maximum=1.0):
     return max(minimum, min(maximum, value))
 
 
-def physical_panel_height_mm(device_values=None, drm_root=Path("/sys/class/drm")):
-    """Return the visible landscape panel height, preferring device metadata."""
-    if isinstance(device_values, dict):
-        try:
-            explicit = float(device_values.get("ARMADA_PANEL_PHYSICAL_HEIGHT_MM", 0))
-        except (TypeError, ValueError):
-            explicit = 0.0
-        if explicit > 0:
-            return explicit
-
-    candidates = []
-    try:
-        paths = sorted(drm_root.glob("card*-*/edid"))
-    except OSError:
-        paths = []
-    for path in paths:
-        try:
-            data = path.read_bytes()
-        except OSError:
-            continue
-        if (
-            len(data) < 23
-            or data[:8] != b"\x00\xff\xff\xff\xff\xff\xff\x00"
-            or not data[21]
-            or not data[22]
-        ):
-            continue
-        # EDID stores the two physical axes in centimetres.  Game Mode is
-        # landscape on Armada handhelds, so its visible height is the shorter
-        # physical axis even when the native panel scanout is portrait.
-        height = min(data[21], data[22]) * 10.0
-        name = path.parent.name.lower()
-        priority = 0 if ("dsi" in name or "edp" in name) else 1
-        candidates.append((priority, height))
-    if candidates and min(candidates)[0] == 0:
-        return min(candidates)[1]
-    spec = panel_spec(device_values)
-    if spec:
-        diagonal_inches, width_px, height_px = spec
-        return diagonal_inches * 25.4 * height_px / math.hypot(width_px, height_px)
-    return min(candidates)[1] if candidates else None
-
-
-def apply_deck_like_size(config, device_values=None, drm_root=Path("/sys/class/drm")):
-    """Resolve a 32.5 mm square pad to a percentage of the physical screen."""
-    result = dict(config)
-    if not result.get("deckLikeSize"):
-        return result
-    height_mm = physical_panel_height_mm(device_values, drm_root)
-    if not height_mm:
-        return result
-    minimum, maximum = NUMBER_RANGES["leftSize"]
-    size = round(max(minimum, min(maximum, DECK_TRACKPAD_SIZE_MM / height_mm * 100.0)))
-    result["leftSize"] = size
-    result["rightSize"] = size
-    return result
-
-
 def sanitize_config(value):
-    result = dict(DEFAULT_CONFIG)
+    result = {key: list(item) if isinstance(item, list) else item for key, item in DEFAULT_CONFIG.items()}
     if not isinstance(value, dict):
         return result
     for key in BOOLEAN_KEYS:
@@ -225,6 +168,13 @@ def sanitize_config(value):
         number = value.get(key)
         if isinstance(number, int) and not isinstance(number, bool):
             result[key] = max(minimum, min(maximum, number))
+    result["shortcutButtons"] = sanitize_shortcut_buttons(value.get("shortcutButtons"))
+    if type(value.get("shortcutHoldSeconds")) is int and value["shortcutHoldSeconds"] in (0, 3):
+        result["shortcutHoldSeconds"] = value["shortcutHoldSeconds"]
+    if value.get("screen") in ("primary", "secondary"):
+        result["screen"] = value["screen"]
+    if value.get("touchRotation") in ("normal", "right", "upside_down", "left"):
+        result["touchRotation"] = value["touchRotation"]
     if value.get("backgroundStyle") in ("dots", "solid", "none"):
         result["backgroundStyle"] = value["backgroundStyle"]
     if value.get("mode") in ("simple", "corners", "floating", "halves"):
@@ -243,7 +193,7 @@ def sanitize_config(value):
 
 
 def rotate_touch(x, y, orientation):
-    """Map panel-native normalized coordinates into the visible display."""
+    """Rotate a normalized screen point clockwise/right or counterclockwise/left."""
     if orientation == "left":
         return y, 1.0 - x
     if orientation == "right":
@@ -253,14 +203,30 @@ def rotate_touch(x, y, orientation):
     return x, y
 
 
-def trackpad_at(x, y, config, aspect_ratio=16 / 9):
+def transform_touch(x, y, device_values, config):
+    """Match Gamescope's panel transform, then apply optional user calibration.
+
+    Gamescope's force_orientation uses left=90/right=270; its touchscreen
+    transform is the inverse of the scanout rotation. Reuse that convention
+    instead of introducing a separate per-device touchscreen orientation.
+    """
+    panel_orientation = device_values.get("ARMADA_PANEL_ORIENTATION", "normal")
+    automatic = {"left": "right", "right": "left"}.get(panel_orientation, panel_orientation)
+    x, y = rotate_touch(x, y, automatic)
+    x, y = rotate_touch(x, y, config.get("touchRotation", "normal"))
+    if config.get("touchMirror", False):
+        x = 1.0 - x
+    return clamp(x), clamp(y)
+
+
+def trackpad_at(x, y, config, aspect_ratio=16 / 9, pixel_height=1080):
     """Return (side, local_x, local_y) for an enabled bottom-corner pad."""
     for side in ("left", "right"):
         if not config[f"{side}Enabled"]:
             continue
         height = config[f"{side}Size"] / 100.0
         width = height / aspect_ratio
-        gap_y = config["edgeGap"] / 1080.0
+        gap_y = config["edgeGap"] / float(pixel_height)
         gap_x = gap_y / aspect_ratio
         left = gap_x if side == "left" else 1.0 - gap_x - width
         top = 1.0 - gap_y - height
@@ -269,7 +235,7 @@ def trackpad_at(x, y, config, aspect_ratio=16 / 9):
     return None
 
 
-def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
+def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9, pixel_height=1080):
     """Return (side, corner, local_x, local_y) for an enabled pad zone."""
     if not config["enabled"]:
         return None
@@ -278,7 +244,7 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
             continue
         height = config[f"{side}Size"] / 100.0
         width = height / aspect_ratio
-        gap_y = config["edgeGap"] / 1080.0
+        gap_y = config["edgeGap"] / float(pixel_height)
         gap_x = gap_y / aspect_ratio
         left = gap_x if side == "left" else 1.0 - gap_x - width
         mode = config["mode"]
@@ -297,7 +263,7 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9):
     return None
 
 
-def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9):
+def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
     """Map a screen point to the selected virtual Steam Deck touchpad."""
     if zone == "half":
         local_x = x * 2.0 if side == "left" else (x - 0.5) * 2.0
@@ -309,14 +275,14 @@ def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, a
             clamp(0.5 + (x - anchor_x) / width),
             clamp(0.5 + (y - anchor_y) / height),
         )
-    gap_y = config["edgeGap"] / 1080.0
+    gap_y = config["edgeGap"] / float(pixel_height)
     gap_x = gap_y / aspect_ratio
     left = gap_x if side == "left" else 1.0 - gap_x - width
     top = gap_y if zone == "top" else 1.0 - gap_y - height
     return clamp((x - left) / width), clamp((y - top) / height)
 
 
-def point_in_trackpad_bounds(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9):
+def point_in_trackpad_bounds(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
     """Return whether a screen point remains inside its assigned pad area."""
     if zone == "half":
         return x <= 0.5 if side == "left" else x > 0.5
@@ -327,7 +293,7 @@ def point_in_trackpad_bounds(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.
             anchor_x - width / 2 <= x <= anchor_x + width / 2
             and anchor_y - height / 2 <= y <= anchor_y + height / 2
         )
-    gap_y = config["edgeGap"] / 1080.0
+    gap_y = config["edgeGap"] / float(pixel_height)
     gap_x = gap_y / aspect_ratio
     left = gap_x if side == "left" else 1.0 - gap_x - width
     top = gap_y if zone == "top" else 1.0 - gap_y - height

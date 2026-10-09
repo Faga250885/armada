@@ -12,12 +12,15 @@ import os
 from pathlib import Path
 import runpy
 import secrets
+import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,10 +150,9 @@ def render_worker(directory):
     runtime["CONFIG_PATH"], runtime["STATE_PATH"] = config_path, state_path
     app = namespace["TrackpadOverlay"]()
     app.set_application_id(None)
-    app.device_env = {}
     config = {
         "enabled": True, "leftEnabled": True, "rightEnabled": True,
-        "mode": "simple", "deckLikeSize": False,
+        "mode": "simple",
         "leftSize": 35, "rightSize": 35, "borderOpacity": 100,
         "backgroundOpacity": 100, "dotSize": 3,
         "centerDotEnabled": False,
@@ -254,45 +256,27 @@ def render_worker(directory):
             elif phase == 3 and now - phase_started >= 0.5:
                 pixels["reactivated"] = alpha_pixels("reactivated")
                 assert pixels["reactivated"] > 100, pixels
-                config["enabled"] = False
-                config_path.write_text(json.dumps(config))
-                last_frames = len(drawn)
-                phase, phase_started = 4, now
-            elif phase == 4 and now - phase_started >= 0.4:
-                assert len(drawn) > last_frames, "Disabling did not repaint"
-                pixels["disabled"] = alpha_pixels("disabled")
-                assert pixels["disabled"] == 0, pixels
                 config.update(enabled=True, autoHide=False, backgroundStyle="solid",
                               borderWidth=10, borderOpacity=0, backgroundOpacity=50)
                 state.update(leftActive=False, rightActive=False)
                 config_path.write_text(json.dumps(config))
                 state_path.write_text(json.dumps(state))
-                phase, phase_started = 5, now
-            elif phase == 5 and now - phase_started >= 0.5:
+                phase, phase_started = 4, now
+            elif phase == 4 and now - phase_started >= 0.5:
                 pixels["solid"] = alpha_pixels("solid")
                 assert pixels["solid"] > 1000, pixels
                 config.update(backgroundStyle="none", backgroundOpacity=0)
                 config_path.write_text(json.dumps(config))
-                phase, phase_started = 6, now
-            elif phase == 6 and now - phase_started >= 0.4:
+                phase, phase_started = 5, now
+            elif phase == 5 and now - phase_started >= 0.4:
                 pixels["none"] = alpha_pixels("none")
                 assert pixels["none"] == 0, pixels
-                config["enabled"] = False
-                state.update(shortcutNoticeUntil=time.time() + 0.9,
-                             shortcutNoticeEnabled=False)
-                config_path.write_text(json.dumps(config))
-                state_path.write_text(json.dumps(state))
-                phase, phase_started = 7, now
-            elif phase == 7 and now - phase_started >= 0.4:
-                pixels["shortcut"] = alpha_pixels("shortcut")
-                assert pixels["shortcut"] > 10, pixels
-                phase, phase_started = 8, now
-            elif phase == 8 and now - phase_started >= 1.0:
-                pixels["shortcut_faded"] = alpha_pixels("shortcut_faded")
-                assert pixels["shortcut_faded"] == 0, pixels
                 print(json.dumps({"draws": len(drawn), "alphaPixels": pixels}), flush=True)
-                app.quit()
-                return GLib.SOURCE_REMOVE
+                config["enabled"] = False
+                config_path.write_text(json.dumps(config))
+                phase, phase_started = 6, now
+            elif phase == 6:
+                assert now - phase_started < 0.5, "Disabled overlay did not stop"
         except BaseException as error:
             errors.append(error)
             app.quit()
@@ -303,7 +287,57 @@ def render_worker(directory):
     app.run(None)
     if errors:
         raise errors[0]
-    assert phase == 8, f"Overlay exited prematurely at phase {phase}"
+    assert phase == 6, f"Overlay exited prematurely at phase {phase}"
+
+
+class OverlaySessionSelectionTests(unittest.TestCase):
+    def test_copied_secondary_config_normalizes_only_without_hardware(self):
+        sys.path.insert(0, str(LIBRARY))
+        from armada_overlay_session import screen_for_device
+
+        self.assertEqual(screen_for_device("secondary", {}), "primary")
+        self.assertEqual(screen_for_device("secondary", {"ARMADA_SECONDARY_CONNECTOR": "DSI-1"}), "primary")
+        self.assertEqual(screen_for_device("secondary", {"ARMADA_SECONDARY_TOUCHSCREEN": "bottom_touchscreen"}), "primary")
+        dual = {"ARMADA_SECONDARY_CONNECTOR": "DSI-1", "ARMADA_SECONDARY_TOUCHSCREEN": "bottom_touchscreen"}
+        # Hardware selection stays secondary without any session/socket data.
+        self.assertEqual(screen_for_device("secondary", dual), "secondary")
+        self.assertEqual(screen_for_device("primary", dual), "primary")
+
+    def test_screen_selection_never_falls_back_to_other_compositor(self):
+        sys.path.insert(0, str(LIBRARY))
+        import armada_overlay_session as session
+
+        primary = {"DISPLAY": ":20", "GAMESCOPE_WAYLAND_DISPLAY": "gamescope-primary"}
+        secondary = {"DISPLAY": ":40", "GAMESCOPE_WAYLAND_DISPLAY": "gamescope-secondary"}
+        with mock.patch.object(session, "steam_environments", return_value=[primary]) as steam, \
+                mock.patch.object(session, "secondary_environments", return_value=[secondary]) as bottom, \
+                mock.patch.object(session, "xwayland_authorities", return_value={}), \
+                mock.patch.object(session, "can_open_x11", return_value=True):
+            self.assertEqual(session.discover_gamescope_environment(screen="secondary"), ":40")
+            steam.assert_not_called()
+            bottom.assert_called_once()
+            steam.reset_mock()
+            bottom.reset_mock()
+            self.assertEqual(session.discover_gamescope_environment(screen="primary"), ":20")
+            steam.assert_called_once()
+            bottom.assert_not_called()
+
+        with mock.patch.object(session, "steam_environments", return_value=[primary]) as steam, \
+                mock.patch.object(session, "secondary_environments", return_value=[]), \
+                mock.patch.object(session, "xwayland_authorities", return_value={}):
+            with self.assertRaisesRegex(RuntimeError, "Secondary"):
+                session.discover_gamescope_environment(timeout=0.01, screen="secondary")
+            steam.assert_not_called()
+
+    def test_secondary_requires_live_ready_socket(self):
+        sys.path.insert(0, str(LIBRARY))
+        import armada_overlay_session as session
+
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(session.subprocess, "check_output") as runner:
+            (Path(directory) / "armada-bottom-env").write_text("DISPLAY=:40\n")
+            self.assertEqual(session.secondary_environments(directory), [])
+            runner.assert_not_called()
 
 
 class OverlayRuntimeTests(unittest.TestCase):
@@ -315,6 +349,13 @@ class OverlayRuntimeTests(unittest.TestCase):
         cls.directory = tempfile.TemporaryDirectory(prefix="armada-overlay-test-")
         cls.addClassCleanup(cls.directory.cleanup)
         cls.authority = Path(cls.directory.name) / "Xauthority"
+        cls.config_path = Path(cls.directory.name) / "service-config.json"
+        cls.dual_device_env = Path(cls.directory.name) / "dual-device-env"
+        cls.dual_device_env.write_text(
+            "#!/bin/sh\nprintf '%s\\n' ARMADA_SECONDARY_CONNECTOR=DSI-1 "
+            "ARMADA_SECONDARY_TOUCHSCREEN=bottom_touchscreen\n"
+        )
+        cls.dual_device_env.chmod(0o700)
         number = 200 + os.getpid() % 10000
         while Path(f"/tmp/.X11-unix/X{number}").exists() or Path(f"/tmp/.X{number}-lock").exists():
             number += 1
@@ -386,8 +427,12 @@ class OverlayRuntimeTests(unittest.TestCase):
             ARMADA_TEST_DISPLAY=self.display,
             ARMADA_TEST_AUTHORITY=str(self.authority),
             ARMADA_DEVICE_ENV="/nonexistent-armada-test-device-env",
+            ARMADA_VIRTUAL_TRACKPADS_CONFIG_PATH=str(self.config_path),
         )
         return environment
+
+    def setUp(self):
+        self.config_path.write_text(json.dumps({"enabled": True, "screen": "primary"}))
 
     def assert_no_render_errors(self, output):
         for failure in ("Traceback", "Gtk couldn't be initialized", "GDK_IS_DISPLAY",
@@ -418,6 +463,97 @@ class OverlayRuntimeTests(unittest.TestCase):
         self.assertTrue(alive and marked, output + errors)
         self.assert_no_render_errors(output + errors)
 
+    def test_disabled_service_exits_without_graphics(self):
+        self.config_path.write_text(json.dumps({"enabled": False}))
+        result = subprocess.run(
+            [sys.executable, str(OVERLAY)], env=self.environment(),
+            capture_output=True, text=True, timeout=3,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("using", result.stdout)
+        self.assert_no_render_errors(result.stdout + result.stderr)
+
+    def test_screen_change_stops_old_overlay(self):
+        process = subprocess.Popen(
+            [sys.executable, str(OVERLAY)],
+            env=dict(self.environment(), ARMADA_DEVICE_ENV=str(self.dual_device_env)),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        probe = X11Probe(self.display)
+        try:
+            deadline = time.monotonic() + 8
+            while not probe.named_window() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertIsNotNone(probe.named_window())
+            self.config_path.write_text(json.dumps({"enabled": True, "screen": "secondary"}))
+            output, errors = process.communicate(timeout=3)
+            self.assertEqual(process.returncode, 0, output + errors)
+            self.assertIsNone(probe.named_window(), "Old screen kept its overlay after selection changed")
+        finally:
+            probe.close()
+            self.stop_process(process)
+
+    def test_secondary_uses_its_own_gamescope_display(self):
+        number = int(self.display[1:]) + 1
+        while Path(f"/tmp/.X11-unix/X{number}").exists() or Path(f"/tmp/.X{number}-lock").exists():
+            number += 1
+        secondary_display = f":{number}"
+        subprocess.run(
+            ["xauth", "-f", str(self.authority), "add", secondary_display,
+             "MIT-MAGIC-COOKIE-1", secrets.token_hex(16)],
+            check=True, capture_output=True, text=True,
+        )
+        server = subprocess.Popen(
+            ["Xvfb", secondary_display, "-noreset", "-screen", "0", "640x480x24", "-nolisten", "tcp",
+             "-auth", str(self.authority)], stdout=self.xvfb_log, stderr=subprocess.STDOUT,
+        )
+        self.addCleanup(self.stop_process, server)
+        deadline = time.monotonic() + 5
+        while not Path(f"/tmp/.X11-unix/X{number}").exists():
+            if server.poll() is not None or time.monotonic() >= deadline:
+                self.fail("Secondary X server failed to start")
+            time.sleep(0.02)
+        secondary_probe, primary_probe = X11Probe(secondary_display), X11Probe(self.display)
+        self.addCleanup(secondary_probe.close)
+        self.addCleanup(primary_probe.close)
+        secondary_probe.set_server_id(0)
+
+        runtime = Path(self.directory.name) / "secondary-runtime"
+        runtime.mkdir()
+        endpoint = socket.socket(socket.AF_UNIX)
+        self.addCleanup(endpoint.close)
+        endpoint.bind(str(runtime / "gamescope-secondary"))
+        (runtime / "armada-bottom-env").write_text(
+            f"DISPLAY={shlex.quote(secondary_display)}\n"
+            f"XAUTHORITY={shlex.quote(str(self.authority))}\n"
+            "GAMESCOPE_WAYLAND_DISPLAY=gamescope-secondary\n"
+        )
+        # Copy through text mode so this fixture also works from Windows checkouts.
+        runner = runtime / "armada-run-bottom"
+        runner.write_text((ROOT / "system_files/usr/bin/armada-run-bottom").read_text())
+        runner.chmod(0o700)
+        self.config_path.write_text(json.dumps({"enabled": True, "screen": "secondary"}))
+        environment = dict(self.environment(), ARMADA_TEST_RUNTIME=str(runtime),
+                           ARMADA_TEST_BOTTOM_RUNNER=str(runner),
+                           ARMADA_DEVICE_ENV=str(self.dual_device_env))
+        process = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "--secondary-worker"], env=environment,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            deadline = time.monotonic() + 8
+            while not secondary_probe.named_window() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.05)
+            secondary_window = secondary_probe.named_window()
+            primary_window = primary_probe.named_window()
+        finally:
+            process.terminate()
+            output, errors = process.communicate(timeout=3)
+        self.assertIsNotNone(secondary_window, output + errors)
+        self.assertIsNone(primary_window, "Secondary overlay appeared on the primary screen")
+        self.assertIn(f"using secondary display {secondary_display}", output)
+        self.assert_no_render_errors(output + errors)
+
     def test_real_gtk_drawing_and_transparency(self):
         try:
             result = subprocess.run(
@@ -436,7 +572,7 @@ class OverlayRuntimeTests(unittest.TestCase):
         self.assert_no_render_errors(result.stdout + result.stderr)
         self.assertIn('"alphaPixels"', result.stdout)
 
-    def test_reject_secondary_and_non_gamescope_displays(self):
+    def test_reject_isolated_game_and_non_gamescope_displays(self):
         sys.path.insert(0, str(LIBRARY))
         from armada_overlay_session import can_open_x11
 
@@ -456,5 +592,15 @@ class OverlayRuntimeTests(unittest.TestCase):
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--render-worker":
         render_worker(sys.argv[2])
+    elif len(sys.argv) > 1 and sys.argv[1] == "--secondary-worker":
+        sys.path.insert(0, str(LIBRARY))
+        import armada_overlay_session as session
+
+        secondary_environments = session.secondary_environments
+        session.secondary_environments = lambda: secondary_environments(
+            runtime_root=os.environ["ARMADA_TEST_RUNTIME"],
+            runner=os.environ["ARMADA_TEST_BOTTOM_RUNNER"],
+        )
+        runpy.run_path(str(OVERLAY), run_name="__main__")
     else:
         unittest.main(verbosity=2)
