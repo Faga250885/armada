@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from armada_virtual_trackpads import DEFAULT_CONFIG, SHORTCUT_BUTTONS, ShortcutHold, display_dimensions, game_mode_active, panel_aspect_ratio, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_at, trackpad_coordinates, transform_touch
+from armada_virtual_trackpads import DEFAULT_CONFIG, SHORTCUT_BUTTONS, ShortcutHold, display_dimensions, game_mode_active, layout_to_screen, panel_aspect_ratio, point_in_trackpad_bounds, rotate_touch, sanitize_config, screen_to_layout, should_capture_touch, trackpad_at, trackpad_coordinates, trackpad_rect, transform_touch
 
 config = sanitize_config({
     "enabled": True,
@@ -151,8 +151,16 @@ assert transform_touch(0, 0, {"ARMADA_PANEL_ORIENTATION": "right"}, config) == (
 assert transform_touch(0.2, 0.3, {}, {**config, "touchRotation": "normal"}) == (0.2, 0.3)
 for rotation, expected in (("normal", (0, 0)), ("right", (1, 0)), ("upside_down", (1, 1)), ("left", (0, 1))):
     corrected = {**config, "touchRotation": rotation}
-    assert transform_touch(0, 0, {}, corrected) == expected
-    assert transform_touch(0, 0, {}, {**corrected, "touchMirror": True}) == (1 - expected[0], expected[1])
+    assert layout_to_screen(0, 0, corrected) == expected
+    assert layout_to_screen(0, 0, {**corrected, "touchMirror": True}) == (1 - expected[0], expected[1])
+    # A layout setting must not apply a second correction to raw panel input.
+    assert transform_touch(0, 0, {}, corrected) == (0, 0)
+    assert transform_touch(0, 0, {}, {**corrected, "touchMirror": True}) == (0, 0)
+    for mirror in (False, True):
+        oriented = {**corrected, "touchMirror": mirror}
+        for point in ((0, 0), (1, 1), (0.2, 0.7)):
+            roundtrip = screen_to_layout(*layout_to_screen(*point, oriented), oriented)
+            assert all(abs(a - b) < 1e-9 for a, b in zip(point, roundtrip))
 
 # 35% high square in a 16:9 viewport occupies 19.6875% of its width.
 left = trackpad_at(0.05, 0.9, config)
@@ -223,6 +231,64 @@ for pixel_width, pixel_height in ((1280, 720), (1280, 960), (1920, 1080)):
             assert trackpad_zone_at(outside_x, y, corners, aspect, pixel_height) is None
             if zone == "bottom":
                 assert trackpad_at(x, y, geometry, aspect, pixel_height)[0] == side
+
+# Rotated/mirrored pads have matching visible and active pixel rectangles.
+# Square size and corner gap remain constant even through quarter turns on
+# widescreen panels. Test a second (4:3) screen as well as the RP6 resolution.
+for pixel_width, pixel_height in ((1920, 1080), (1280, 960)):
+    aspect = pixel_width / pixel_height
+    for rotation in ("normal", "right", "upside_down", "left"):
+        for mirror in (False, True):
+            oriented = {**simple, "leftSize": 35, "rightSize": 35, "edgeGap": 8,
+                        "touchRotation": rotation, "touchMirror": mirror}
+            for side in ("left", "right"):
+                for zone in ("bottom", "top", "floating"):
+                    anchor_x, anchor_y = layout_to_screen(0.25 if side == "left" else 0.75, 0.5, oriented)
+                    rect_x, rect_y, width, height = trackpad_rect(
+                        side, zone, oriented, anchor_x, anchor_y, aspect, pixel_height)
+                    assert abs(width - pixel_height * 0.35) < 1e-8
+                    assert abs(height - width) < 1e-8
+                    center = (rect_x + width / 2) / pixel_width, (rect_y + height / 2) / pixel_height
+                    assert point_in_trackpad_bounds(*center, side, zone, oriented, anchor_x, anchor_y, aspect, pixel_height)
+                    local = trackpad_coordinates(*center, side, zone, oriented, anchor_x, anchor_y, aspect, pixel_height)
+                    assert all(abs(value - 0.5) < 1e-8 for value in local)
+                    for px, py, inside in (
+                        (rect_x + 1, rect_y + height / 2, True),
+                        (rect_x - 1, rect_y + height / 2, False),
+                        (rect_x + width + 1, rect_y + height / 2, False),
+                        (rect_x + width / 2, rect_y + 1, True),
+                        (rect_x + width / 2, rect_y - 1, False),
+                        (rect_x + width / 2, rect_y + height + 1, False),
+                    ):
+                        assert point_in_trackpad_bounds(px / pixel_width, py / pixel_height, side, zone,
+                                                        oriented, anchor_x, anchor_y, aspect, pixel_height) is inside
+                    mode = "floating" if zone == "floating" else "corners"
+                    hit = trackpad_zone_at(*center, {**oriented, "mode": mode}, aspect, pixel_height)
+                    assert hit[:2] == (side, zone)
+                    if zone == "floating":
+                        assert all(abs(a - b) < 1e-9 for a, b in zip(center, (anchor_x, anchor_y)))
+                    else:
+                        # Every fixed pad stays exactly one configured gap
+                        # from each of its two physical screen edges.
+                        assert min(abs(rect_x - 8), abs(pixel_width - rect_x - width - 8)) < 1e-8
+                        assert min(abs(rect_y - 8), abs(pixel_height - rect_y - height - 8)) < 1e-8
+                half_point = layout_to_screen(0.25 if side == "left" else 0.75, 0.4, oriented)
+                hit = trackpad_zone_at(*half_point, {**oriented, "mode": "halves"}, aspect, pixel_height)
+                assert hit[:2] == (side, "half")
+                assert abs(hit[2] - 0.5) < 1e-9 and abs(hit[3] - 0.4) < 1e-9
+
+# The bottom pair visibly moves around the four edges, retaining pad identity.
+expected_centers = {
+    "normal": (("left", "bottom"), ("right", "bottom")),
+    "right": (("left", "top"), ("left", "bottom")),
+    "upside_down": (("right", "top"), ("left", "top")),
+    "left": (("right", "bottom"), ("right", "top")),
+}
+for rotation, expected in expected_centers.items():
+    for side, (horizontal, vertical) in zip(("left", "right"), expected):
+        x, y, width, height = trackpad_rect(side, "bottom", {**simple, "touchRotation": rotation})
+        assert (x + width / 2 < 1920 / 2) == (horizontal == "left")
+        assert (y + height / 2 < 1080 / 2) == (vertical == "top")
 
 print("Virtual trackpad geometry and configuration tests passed")
 PYEOF

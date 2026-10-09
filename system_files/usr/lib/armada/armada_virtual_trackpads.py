@@ -204,34 +204,86 @@ def rotate_touch(x, y, orientation):
 
 
 def transform_touch(x, y, device_values, config):
-    """Match Gamescope's panel transform, then apply optional user calibration.
+    """Normalize the digitizer into the selected display's screen coordinates.
 
     Gamescope's force_orientation uses left=90/right=270; its touchscreen
     transform is the inverse of the scanout rotation. Reuse that convention
     instead of introducing a separate per-device touchscreen orientation.
+    User layout rotation belongs in the shared hit-test/drawing geometry;
+    applying it here would move the input while leaving the visible pad behind.
     """
     panel_orientation = device_values.get("ARMADA_PANEL_ORIENTATION", "normal")
     automatic = {"left": "right", "right": "left"}.get(panel_orientation, panel_orientation)
     x, y = rotate_touch(x, y, automatic)
+    return clamp(x), clamp(y)
+
+
+def layout_to_screen(x, y, config):
+    """Project a normalized layout point onto the physical screen."""
     x, y = rotate_touch(x, y, config.get("touchRotation", "normal"))
     if config.get("touchMirror", False):
         x = 1.0 - x
-    return clamp(x), clamp(y)
+    return x, y
+
+
+def screen_to_layout(x, y, config):
+    """Inverse of layout_to_screen, shared by all pointer hit tests."""
+    if config.get("touchMirror", False):
+        x = 1.0 - x
+    rotation = config.get("touchRotation", "normal")
+    inverse = {"left": "right", "right": "left"}.get(rotation, rotation)
+    return rotate_touch(x, y, inverse)
+
+
+def _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height):
+    """Return a normalized logical rectangle before rotation/mirroring.
+
+    A quarter-turn uses a swapped logical viewport. Keeping the side length in
+    physical pixels prevents square pads becoming rectangles on wide screens.
+    Floating anchors are always expressed in physical screen coordinates.
+    """
+    logical_width, logical_height = float(pixel_height) * aspect_ratio, float(pixel_height)
+    if config.get("touchRotation") in ("left", "right"):
+        logical_width, logical_height = logical_height, logical_width
+    if zone == "half":
+        return (0.0 if side == "left" else 0.5), 0.0, 0.5, 1.0
+    size = config[f"{side}Size"] / 100.0 * pixel_height
+    width, height = size / logical_width, size / logical_height
+    if zone == "floating":
+        anchor_x, anchor_y = screen_to_layout(anchor_x, anchor_y, config)
+        return anchor_x - width / 2, anchor_y - height / 2, width, height
+    gap_x = config["edgeGap"] / logical_width
+    gap_y = config["edgeGap"] / logical_height
+    left = gap_x if side == "left" else 1.0 - gap_x - width
+    top = gap_y if zone == "top" else 1.0 - gap_y - height
+    return left, top, width, height
+
+
+def trackpad_rect(side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
+    """Return the visible pad's physical pixel (x, y, width, height).
+
+    Drawing and touch handling deliberately share _layout_rect so every mode,
+    rotation, mirror setting and selected-screen resolution stays aligned.
+    """
+    left, top, width, height = _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height)
+    first = layout_to_screen(left, top, config)
+    last = layout_to_screen(left + width, top + height, config)
+    pixel_width = float(pixel_height) * aspect_ratio
+    return (
+        min(first[0], last[0]) * pixel_width,
+        min(first[1], last[1]) * pixel_height,
+        abs(last[0] - first[0]) * pixel_width,
+        abs(last[1] - first[1]) * pixel_height,
+    )
 
 
 def trackpad_at(x, y, config, aspect_ratio=16 / 9, pixel_height=1080):
     """Return (side, local_x, local_y) for an enabled bottom-corner pad."""
     for side in ("left", "right"):
-        if not config[f"{side}Enabled"]:
-            continue
-        height = config[f"{side}Size"] / 100.0
-        width = height / aspect_ratio
-        gap_y = config["edgeGap"] / float(pixel_height)
-        gap_x = gap_y / aspect_ratio
-        left = gap_x if side == "left" else 1.0 - gap_x - width
-        top = 1.0 - gap_y - height
-        if left <= x <= left + width and top <= y <= top + height:
-            return side, clamp((x - left) / width), clamp((y - top) / height)
+        if config[f"{side}Enabled"] and point_in_trackpad_bounds(
+                x, y, side, "bottom", config, aspect_ratio=aspect_ratio, pixel_height=pixel_height):
+            return (side, *trackpad_coordinates(
+                x, y, side, "bottom", config, aspect_ratio=aspect_ratio, pixel_height=pixel_height))
     return None
 
 
@@ -239,62 +291,40 @@ def trackpad_zone_at(x, y, config, aspect_ratio=16 / 9, pixel_height=1080):
     """Return (side, corner, local_x, local_y) for an enabled pad zone."""
     if not config["enabled"]:
         return None
+    layout_x, _layout_y = screen_to_layout(x, y, config)
     for side in ("left", "right"):
         if not config[f"{side}Enabled"]:
             continue
-        height = config[f"{side}Size"] / 100.0
-        width = height / aspect_ratio
-        gap_y = config["edgeGap"] / float(pixel_height)
-        gap_x = gap_y / aspect_ratio
-        left = gap_x if side == "left" else 1.0 - gap_x - width
         mode = config["mode"]
         if mode in ("floating", "halves"):
-            if (side == "left" and x <= 0.5) or (side == "right" and x > 0.5):
+            if (side == "left" and layout_x <= 0.5) or (side == "right" and layout_x > 0.5):
                 if mode == "halves":
-                    local_x = x * 2.0 if side == "left" else (x - 0.5) * 2.0
-                    return side, "half", clamp(local_x), clamp(y)
+                    return (side, "half", *trackpad_coordinates(
+                        x, y, side, "half", config, aspect_ratio=aspect_ratio, pixel_height=pixel_height))
                 return side, "floating", 0.5, 0.5
             continue
         corners = ("top", "bottom") if mode == "corners" else ("bottom",)
         for corner in corners:
-            top = gap_y if corner == "top" else 1.0 - gap_y - height
-            if left <= x <= left + width and top <= y <= top + height:
-                return side, corner, clamp((x - left) / width), clamp((y - top) / height)
+            if point_in_trackpad_bounds(x, y, side, corner, config, aspect_ratio=aspect_ratio, pixel_height=pixel_height):
+                return (side, corner, *trackpad_coordinates(
+                    x, y, side, corner, config, aspect_ratio=aspect_ratio, pixel_height=pixel_height))
     return None
 
 
 def trackpad_coordinates(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
     """Map a screen point to the selected virtual Steam Deck touchpad."""
-    if zone == "half":
-        local_x = x * 2.0 if side == "left" else (x - 0.5) * 2.0
-        return clamp(local_x), clamp(y)
-    height = config[f"{side}Size"] / 100.0
-    width = height / aspect_ratio
+    x, y = screen_to_layout(x, y, config)
+    left, top, width, height = _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height)
     if zone == "floating":
-        return (
-            clamp(0.5 + (x - anchor_x) / width),
-            clamp(0.5 + (y - anchor_y) / height),
-        )
-    gap_y = config["edgeGap"] / float(pixel_height)
-    gap_x = gap_y / aspect_ratio
-    left = gap_x if side == "left" else 1.0 - gap_x - width
-    top = gap_y if zone == "top" else 1.0 - gap_y - height
+        anchor_x, anchor_y = screen_to_layout(anchor_x, anchor_y, config)
+        return clamp(0.5 + (x - anchor_x) / width), clamp(0.5 + (y - anchor_y) / height)
     return clamp((x - left) / width), clamp((y - top) / height)
 
 
 def point_in_trackpad_bounds(x, y, side, zone, config, anchor_x=0.5, anchor_y=0.5, aspect_ratio=16 / 9, pixel_height=1080):
     """Return whether a screen point remains inside its assigned pad area."""
+    x, y = screen_to_layout(x, y, config)
     if zone == "half":
         return x <= 0.5 if side == "left" else x > 0.5
-    height = config[f"{side}Size"] / 100.0
-    width = height / aspect_ratio
-    if zone == "floating":
-        return (
-            anchor_x - width / 2 <= x <= anchor_x + width / 2
-            and anchor_y - height / 2 <= y <= anchor_y + height / 2
-        )
-    gap_y = config["edgeGap"] / float(pixel_height)
-    gap_x = gap_y / aspect_ratio
-    left = gap_x if side == "left" else 1.0 - gap_x - width
-    top = gap_y if zone == "top" else 1.0 - gap_y - height
+    left, top, width, height = _layout_rect(side, zone, config, anchor_x, anchor_y, aspect_ratio, pixel_height)
     return left <= x <= left + width and top <= y <= top + height

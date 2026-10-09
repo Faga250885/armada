@@ -25,6 +25,7 @@ dnf5 -y install --setopt=install_weak_deps=False \
     python3-gobject \
     python3-evdev \
     python3-cairo \
+    libnotify \
     gtk4 \
     libXfixes \
     libadwaita \
