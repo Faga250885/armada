@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "system_files/usr/lib/armada"))
-from armada_virtual_trackpads import ShortcutHold, sanitize_config
+from armada_virtual_trackpads import ShortcutHold, sanitize_config, trackpad_rect
 
 
 def load_script(name, path):
@@ -51,6 +51,10 @@ with patch.dict(sys.modules, {
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
         control.VIRTUAL_TRACKPADS_LIFECYCLE.clear()
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.notice_path = Path(self.directory.name) / "notice.json"
+        patch.object(control, "VIRTUAL_TRACKPADS_NOTICE", self.notice_path).start()
         self.run_patch = patch.object(control, "run")
         self.run = self.run_patch.start()
         self.session_patch = patch.object(control, "session_systemctl", return_value=types.SimpleNamespace(returncode=0))
@@ -155,6 +159,85 @@ class LifecycleTests(unittest.TestCase):
         control.sync_virtual_trackpads(config)
         self.assertEqual(self.actions()[0], ["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE])
 
+    def test_shortcut_off_keeps_only_overlay_until_notice_expires(self):
+        config = sanitize_config({"enabled": True})
+        control.sync_virtual_trackpads(config)
+        self.run.reset_mock()
+        self.session.reset_mock()
+        with patch.object(control.time, "time", return_value=100.0):
+            config["enabled"] = False
+            control.sync_virtual_trackpads(config, shortcut_notice=True)
+            self.assertEqual(self.actions(), [["stop", control.VIRTUAL_TRACKPADS_SERVICE]])
+            self.session.assert_not_called()
+            notice = json.loads(self.notice_path.read_text())
+            self.assertFalse(notice["enabled"])
+            self.assertEqual(notice["expires"], 102.0)
+        self.run.reset_mock()
+        with patch.object(control.time, "time", return_value=102.1):
+            control.sync_virtual_trackpads(config)
+        self.run.assert_not_called()
+        self.assertEqual(self.session.call_args.args, ("stop", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+
+    def test_shortcut_on_in_halves_opens_notice_then_stops_only_overlay(self):
+        config = sanitize_config({"enabled": True, "mode": "halves"})
+        with patch.object(control.time, "time", return_value=100.0):
+            control.sync_virtual_trackpads(config, shortcut_notice=True)
+        self.assertIn(["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE], self.actions())
+        self.assertEqual(self.session.call_args.args, ("restart", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+        self.run.reset_mock()
+        with patch.object(control.time, "time", return_value=102.1):
+            control.sync_virtual_trackpads(config)
+        self.run.assert_not_called()
+        self.assertEqual(self.session.call_args.args, ("stop", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+
+    def test_failed_capture_start_does_not_publish_success_notice(self):
+        self.run.side_effect = RuntimeError("could not start")
+        with self.assertRaises(RuntimeError):
+            control.sync_virtual_trackpads(sanitize_config({"enabled": True}), shortcut_notice=True)
+        self.assertFalse(self.notice_path.exists())
+
+    def test_shortcut_after_expired_notice_restarts_overlay_without_capture(self):
+        config = sanitize_config({})
+        with patch.object(control.time, "time", return_value=100.0):
+            control.sync_virtual_trackpads(config, shortcut_notice=True)
+        self.run.reset_mock()
+        self.session.reset_mock()
+        # Overlay may have exited, but control's two-second reconciliation
+        # has not yet cleared its remembered screen.
+        with patch.object(control.time, "time", return_value=102.1):
+            control.sync_virtual_trackpads(config, shortcut_notice=True)
+        self.run.assert_not_called()
+        self.assertEqual(self.session.call_args.args, ("start", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+        self.assertAlmostEqual(json.loads(self.notice_path.read_text())["expires"], 104.1)
+
+    def test_off_notice_falls_back_to_primary_when_secondary_session_closed(self):
+        self.game.side_effect = lambda **kwargs: kwargs.get("screen") != "secondary"
+        with patch.object(control.time, "time", return_value=100.0):
+            control.sync_virtual_trackpads(sanitize_config({"screen": "secondary"}), shortcut_notice=True)
+        self.assertEqual(json.loads(self.notice_path.read_text())["screen"], "primary")
+        self.assertEqual(self.session.call_args.args, ("restart", control.VIRTUAL_TRACKPADS_OVERLAY_SERVICE))
+        self.assertNotIn(["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE], self.actions())
+
+    def test_desktop_notice_uses_session_notification_without_overlay_or_capture(self):
+        self.game.return_value = False
+        with patch.object(control, "session_user_command", side_effect=lambda *args: list(args)) as session_user, patch.object(
+            control.subprocess, "run"
+        ) as notify:
+            control.sync_virtual_trackpads(sanitize_config({}), shortcut_notice=True)
+        self.assertEqual(session_user.call_args.args[-1], "Virtual trackpads disabled")
+        self.assertEqual(notify.call_args.args[0][0], "/usr/bin/notify-send")
+        self.assertFalse(self.notice_path.exists())
+        self.assertNotIn(["reload-or-restart", control.VIRTUAL_TRACKPADS_SERVICE], self.actions())
+        self.assertEqual(self.session.call_args.args[0], "stop")
+
+    def test_notice_ignores_malformed_or_expired_state(self):
+        for value in ({}, [], {"enabled": True, "created": 98, "expires": 102, "screen": "primary"},
+                      {"enabled": True, "created": 100, "expires": 102, "screen": "unknown"},
+                      {"enabled": True, "created": 98, "expires": 100, "screen": "primary"}):
+            with self.subTest(value=value), patch.object(control.time, "time", return_value=100.0):
+                self.notice_path.write_text(json.dumps(value))
+                self.assertIsNone(control.virtual_trackpads_notice())
+
 
 class ConfigurationTests(unittest.TestCase):
     def setUp(self):
@@ -176,12 +259,24 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(result["shortcutHoldSeconds"], 3)
         self.assertTrue(json.loads(self.config_path.read_text())["enabled"])
         self.sync.assert_called_once()
+        self.assertTrue(self.sync.call_args.kwargs["shortcut_notice"])
 
     def test_disabled_shortcut_cannot_toggle(self):
         self.config_path.write_text(json.dumps(sanitize_config({"shortcutEnabled": False})))
         with self.assertRaisesRegex(RuntimeError, "disabled"):
             control.action_toggle_virtual_trackpads({})
         self.sync.assert_not_called()
+
+    def test_invalid_controller_cannot_toggle_or_publish_notice(self):
+        with patch.object(control, "action_get_controller_type", return_value={"value": "xbox-series"}):
+            with self.assertRaisesRegex(RuntimeError, "Steam Deck"):
+                control.action_toggle_virtual_trackpads({})
+        self.sync.assert_not_called()
+        self.assertFalse(self.config_path.exists())
+
+    def test_menu_changes_do_not_publish_shortcut_notices(self):
+        control.action_set_virtual_trackpads({"config": sanitize_config({"enabled": True})})
+        self.assertFalse(self.sync.call_args.kwargs["shortcut_notice"])
 
     def test_strict_api_rejects_invalid_shortcuts_without_writing(self):
         for invalid in ([], ["A", "A"], ["A", "B", "X", "Y", "L3"], ["Unknown"], "L3+R3"):
@@ -259,6 +354,54 @@ class ShortcutTests(unittest.TestCase):
 
 
 class CaptureLifecycleTests(unittest.TestCase):
+    def test_rotated_visible_pad_acquires_and_resumes_same_contact_on_reentry(self):
+        for rotation in ("normal", "right", "upside_down", "left"):
+            for mirror in (False, True):
+                with self.subTest(rotation=rotation, mirror=mirror):
+                    pads = daemon.VirtualTrackpads.__new__(daemon.VirtualTrackpads)
+                    pads.config = sanitize_config({
+                        "enabled": True, "limitToBounds": True,
+                        "touchRotation": rotation, "touchMirror": mirror,
+                    })
+                    pads.device_env = {}
+                    pads.x_range, pads.y_range = (0, 1920), (0, 1080)
+                    pads.pixel_height, pads.aspect_ratio = 1080, 1920 / 1080
+                    pads.pad_slots, pads.press_releases = {}, {}
+                    pads.suspended_slots = set()
+                    pads.last_zones, pads.last_positions, pads.last_touches = {}, {}, {}
+                    pads.write_state, pads.ip = Mock(), Mock()
+                    pads.slots = {0: {"tracking": 7, "x": 960, "y": 540}}
+                    pads.update_slot(0)
+                    pads.ip.touch.assert_not_called()
+
+                    # Use the same rectangle as the overlay, then move the
+                    # held finger into it without a new touch-down event.
+                    x, y, width, height = trackpad_rect("left", "bottom", pads.config)
+                    center = {"x": x + width / 2, "y": y + height / 2}
+                    pads.slots[0].update(center)
+                    pads.update_slot(0)
+                    self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, True))
+                    self.assertAlmostEqual(pads.ip.touch.call_args.args[3], 0.5)
+                    self.assertAlmostEqual(pads.ip.touch.call_args.args[4], 0.5)
+                    self.assertEqual(pads.pad_slots[0][:2], ("left", "bottom"))
+
+                    pads.slots[0].update({"x": 960, "y": 540})
+                    pads.update_slot(0)
+                    self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, False))
+                    self.assertIn(0, pads.suspended_slots)
+                    self.assertTrue(pads.slots[0]["cancelTap"])
+                    pads.ip.touch.reset_mock()
+                    pads.update_slot(0)
+                    pads.ip.touch.assert_not_called()
+
+                    pads.slots[0].update(center)
+                    pads.update_slot(0)
+                    self.assertEqual(pads.ip.touch.call_args.args[:3], ("left", 0, True))
+                    self.assertAlmostEqual(pads.ip.touch.call_args.args[3], 0.5)
+                    self.assertAlmostEqual(pads.ip.touch.call_args.args[4], 0.5)
+                    self.assertNotIn(0, pads.suspended_slots)
+                    self.assertEqual(pads.slots[0]["tracking"], 7)
+
     def test_720p_capture_uses_eight_physical_pixels_for_edge_gap(self):
         pads = daemon.VirtualTrackpads.__new__(daemon.VirtualTrackpads)
         pads.config = sanitize_config({"enabled": True, "edgeGap": 8})

@@ -146,8 +146,10 @@ def render_worker(directory):
     assert Gtk.init_check()
     directory = Path(directory)
     config_path, state_path = directory / "config.json", directory / "state.json"
+    notice_path = directory / "notice.json"
     runtime = namespace["TrackpadOverlay"].tick.__globals__
     runtime["CONFIG_PATH"], runtime["STATE_PATH"] = config_path, state_path
+    runtime["NOTICE_PATH"] = notice_path
     app = namespace["TrackpadOverlay"]()
     app.set_application_id(None)
     config = {
@@ -176,8 +178,14 @@ def render_worker(directory):
     last_frames = 0
     pixels = {}
     paintable = None
+    last_surface = None
+    rotations = [("right", False, "top-left"), ("upside_down", False, "top-right"),
+                 ("left", False, "bottom-right"), ("normal", False, "bottom-left"),
+                 ("normal", True, "bottom-right")]
+    rotation_index = 0
 
     def alpha_pixels(label):
+        nonlocal last_surface
         # Render the widget's real GTK render node, rather than calling the
         # Python draw function directly (which would miss callback failures).
         snapshot = Gtk.Snapshot()
@@ -191,6 +199,7 @@ def render_worker(directory):
             # production; never unrealize a renderer attached to that surface.
             node.draw(cairo.Context(surface))
         surface.flush()
+        last_surface = surface
         surface.write_to_png(str(image_path))
         data = surface.get_data()
         alpha_offset = 3 if sys.byteorder == "little" else 0
@@ -205,11 +214,35 @@ def render_worker(directory):
                           "enabled": app.config.get("enabled")}), flush=True)
         return visible
 
+    def alpha_at(x, y):
+        data = last_surface.get_data()
+        offset = int(y) * last_surface.get_stride() + int(x) * 4
+        return data[offset + (3 if sys.byteorder == "little" else 0)]
+
+    def corner_alpha():
+        inset = 8 + app.height * 0.35 / 2
+        return {"top-left": alpha_at(inset, inset),
+                "top-right": alpha_at(app.width - inset, inset),
+                "bottom-left": alpha_at(inset, app.height - inset),
+                "bottom-right": alpha_at(app.width - inset, app.height - inset)}
+
+    def publish_notice(enabled):
+        now = time.time()
+        notice_path.write_text(json.dumps({"enabled": enabled, "created": now,
+                                          "expires": now + 2, "screen": "primary"}))
+
+    def assert_chip(label):
+        # Text must sit on an opaque-enough rounded background, including the
+        # empty padding surrounding it (not merely appear as floating glyphs).
+        pixels[label] = alpha_pixels(label)
+        y = max(16, app.height * 0.045) + 5
+        assert alpha_at(app.width / 2, y) > 150, f"Missing chip background: {label}"
+
     def check():
-        nonlocal phase, phase_started, last_frames, paintable
+        nonlocal phase, phase_started, last_frames, paintable, rotation_index
         now = time.monotonic()
         try:
-            assert now - started < 12, "Overlay did not complete rendering phases"
+            assert now - started < 16, "Overlay did not complete rendering phases"
             if app.window is None or not app.window.get_mapped():
                 return GLib.SOURCE_CONTINUE
             if paintable is None:
@@ -242,16 +275,8 @@ def render_worker(directory):
                 assert len(drawn) > last_frames, "Fade did not repaint"
                 pixels["faded"] = alpha_pixels("faded")
                 assert pixels["faded"] == 0, pixels
-                config.update(mode="halves", centerDotEnabled=True)
                 state.update(leftActive=True, rightActive=True)
-                config_path.write_text(json.dumps(config))
                 state_path.write_text(json.dumps(state))
-                phase, phase_started = 2, now
-            elif phase == 2 and now - phase_started >= 0.4:
-                pixels["halves"] = alpha_pixels("halves")
-                assert pixels["halves"] == 0, pixels
-                config.update(mode="simple", centerDotEnabled=False)
-                config_path.write_text(json.dumps(config))
                 phase, phase_started = 3, now
             elif phase == 3 and now - phase_started >= 0.5:
                 pixels["reactivated"] = alpha_pixels("reactivated")
@@ -271,12 +296,37 @@ def render_worker(directory):
             elif phase == 5 and now - phase_started >= 0.4:
                 pixels["none"] = alpha_pixels("none")
                 assert pixels["none"] == 0, pixels
-                print(json.dumps({"draws": len(drawn), "alphaPixels": pixels}), flush=True)
-                config["enabled"] = False
+                config.update(backgroundStyle="solid", backgroundOpacity=50,
+                              rightEnabled=False, touchRotation=rotations[0][0])
                 config_path.write_text(json.dumps(config))
                 phase, phase_started = 6, now
-            elif phase == 6:
-                assert now - phase_started < 0.5, "Disabled overlay did not stop"
+            elif phase == 6 and now - phase_started >= 0.35:
+                rotation, mirror, corner = rotations[rotation_index]
+                alpha_pixels(f"rotation-{rotation}-mirror-{mirror}")
+                corners = corner_alpha()
+                assert corners[corner] > 0, (rotation, mirror, corners)
+                assert all(value == 0 for key, value in corners.items() if key != corner), corners
+                rotation_index += 1
+                if rotation_index < len(rotations):
+                    config.update(touchRotation=rotations[rotation_index][0],
+                                  touchMirror=rotations[rotation_index][1])
+                    config_path.write_text(json.dumps(config))
+                    phase_started = now
+                else:
+                    publish_notice(True)
+                    phase, phase_started = 7, now
+            elif phase == 7 and now - phase_started >= 0.35:
+                assert_chip("shortcut-enabled")
+                publish_notice(False)
+                config["enabled"] = False
+                config_path.write_text(json.dumps(config))
+                phase, phase_started = 8, now
+            elif phase == 8 and now - phase_started >= 0.35:
+                assert_chip("shortcut-disabled")
+                assert not any(corner_alpha().values()), "Disabled notice kept pads visible"
+                phase, phase_started = 9, now
+            elif phase == 9:
+                assert now - phase_started < 2.5, "Notice-only overlay did not stop at expiry"
         except BaseException as error:
             errors.append(error)
             app.quit()
@@ -287,7 +337,7 @@ def render_worker(directory):
     app.run(None)
     if errors:
         raise errors[0]
-    assert phase == 6, f"Overlay exited prematurely at phase {phase}"
+    assert phase == 9, f"Overlay exited prematurely at phase {phase}"
 
 
 class OverlaySessionSelectionTests(unittest.TestCase):
@@ -350,6 +400,7 @@ class OverlayRuntimeTests(unittest.TestCase):
         cls.addClassCleanup(cls.directory.cleanup)
         cls.authority = Path(cls.directory.name) / "Xauthority"
         cls.config_path = Path(cls.directory.name) / "service-config.json"
+        cls.notice_path = Path(cls.directory.name) / "service-notice.json"
         cls.dual_device_env = Path(cls.directory.name) / "dual-device-env"
         cls.dual_device_env.write_text(
             "#!/bin/sh\nprintf '%s\\n' ARMADA_SECONDARY_CONNECTOR=DSI-1 "
@@ -428,11 +479,13 @@ class OverlayRuntimeTests(unittest.TestCase):
             ARMADA_TEST_AUTHORITY=str(self.authority),
             ARMADA_DEVICE_ENV="/nonexistent-armada-test-device-env",
             ARMADA_VIRTUAL_TRACKPADS_CONFIG_PATH=str(self.config_path),
+            ARMADA_VIRTUAL_TRACKPADS_NOTICE_PATH=str(self.notice_path),
         )
         return environment
 
     def setUp(self):
         self.config_path.write_text(json.dumps({"enabled": True, "screen": "primary"}))
+        self.notice_path.unlink(missing_ok=True)
 
     def assert_no_render_errors(self, output):
         for failure in ("Traceback", "Gtk couldn't be initialized", "GDK_IS_DISPLAY",
@@ -464,14 +517,31 @@ class OverlayRuntimeTests(unittest.TestCase):
         self.assert_no_render_errors(output + errors)
 
     def test_disabled_service_exits_without_graphics(self):
-        self.config_path.write_text(json.dumps({"enabled": False}))
-        result = subprocess.run(
-            [sys.executable, str(OVERLAY)], env=self.environment(),
-            capture_output=True, text=True, timeout=3,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("using", result.stdout)
-        self.assert_no_render_errors(result.stdout + result.stderr)
+        for config in ({"enabled": False}, {"enabled": True, "mode": "halves", "centerDotEnabled": True}):
+            with self.subTest(config=config):
+                self.config_path.write_text(json.dumps(config))
+                result = subprocess.run(
+                    [sys.executable, str(OVERLAY)], env=self.environment(),
+                    capture_output=True, text=True, timeout=3,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn("using", result.stdout)
+                self.assert_no_render_errors(result.stdout + result.stderr)
+
+    def test_disabled_shortcut_notice_bootstraps_and_exits(self):
+        for config in ({"enabled": False}, {"enabled": True, "mode": "halves"}):
+            with self.subTest(config=config):
+                self.config_path.write_text(json.dumps(config))
+                now = time.time()
+                self.notice_path.write_text(json.dumps({"enabled": config["enabled"], "created": now,
+                                                       "expires": now + 2, "screen": "primary"}))
+                result = subprocess.run(
+                    [sys.executable, str(OVERLAY)], env=self.environment(),
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("first GTK/Cairo frame rendered", result.stdout)
+                self.assert_no_render_errors(result.stdout + result.stderr)
 
     def test_screen_change_stops_old_overlay(self):
         process = subprocess.Popen(
@@ -558,7 +628,7 @@ class OverlayRuntimeTests(unittest.TestCase):
         try:
             result = subprocess.run(
                 [sys.executable, str(Path(__file__).resolve()), "--render-worker", self.directory.name],
-                env=self.environment(), capture_output=True, text=True, timeout=18,
+                env=self.environment(), capture_output=True, text=True, timeout=22,
             )
         finally:
             output_directory = os.environ.get("ARMADA_OVERLAY_TEST_OUTPUT")

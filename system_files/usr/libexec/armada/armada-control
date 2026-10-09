@@ -40,6 +40,8 @@ INTERCEPT_MODES = {"overlay", "reset"}
 SWIPE_GESTURES_CONFIG = Path("/etc/armada/swipe-gestures.conf")
 VIRTUAL_TRACKPADS_CONFIG = Path("/etc/armada/virtual-trackpads.json")
 VIRTUAL_TRACKPADS_STATE = Path("/run/armada/virtual-trackpads-state.json")
+VIRTUAL_TRACKPADS_NOTICE = Path("/run/armada/virtual-trackpads-notice.json")
+VIRTUAL_TRACKPADS_NOTICE_SECONDS = 2.0
 VIRTUAL_TRACKPADS_SERVICE = "armada-virtual-trackpads.service"
 VIRTUAL_TRACKPADS_SHORTCUT_SERVICE = "armada-virtual-trackpads-shortcut.service"
 VIRTUAL_TRACKPADS_OVERLAY_SERVICE = "armada-virtual-trackpads-overlay.service"
@@ -527,7 +529,47 @@ def virtual_trackpads_config():
     return config
 
 
-def sync_virtual_trackpads(config=None):
+def virtual_trackpads_notice():
+    """Read a bounded, root-written shortcut acknowledgement, never pad input."""
+    try:
+        notice = json.loads(VIRTUAL_TRACKPADS_NOTICE.read_text(encoding="utf-8"))
+        if not isinstance(notice, dict) or type(notice.get("enabled")) is not bool:
+            return None
+        created, expires = float(notice["created"]), float(notice["expires"])
+        if not created <= time.time() < expires <= created + VIRTUAL_TRACKPADS_NOTICE_SECONDS:
+            return None
+        if notice.get("screen") not in ("primary", "secondary"):
+            return None
+        return notice
+    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        return None
+
+
+def publish_virtual_trackpads_notice(config, in_game_mode):
+    """Acknowledge a successful shortcut without keeping input workers alive."""
+    if not in_game_mode:
+        try:
+            subprocess.run(
+                session_user_command(
+                    "/usr/bin/notify-send", "--app-name=Armada Control", "--expire-time=2000",
+                    "--hint=string:x-canonical-private-synchronous:armada-virtual-trackpads",
+                    "Virtual trackpads enabled" if config["enabled"] else "Virtual trackpads disabled",
+                ), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3,
+            )
+        except (OSError, KeyError, subprocess.SubprocessError) as error:
+            print(f"armada-control: trackpad notification: {error}", flush=True)
+        return
+    screen = config["screen"]
+    if screen == "secondary" and not game_mode_active(screen="secondary"):
+        screen = "primary"
+    created = time.time()
+    atomic_write(VIRTUAL_TRACKPADS_NOTICE, json.dumps({
+        "enabled": config["enabled"], "created": created,
+        "expires": created + VIRTUAL_TRACKPADS_NOTICE_SECONDS, "screen": screen,
+    }, separators=(",", ":")) + "\n")
+
+
+def sync_virtual_trackpads(config=None, *, shortcut_notice=False):
     """Manage optional workers from the existing control service event loop.
 
     File/session checks reuse the control daemon's existing wakeup. No input,
@@ -553,19 +595,35 @@ def sync_virtual_trackpads(config=None):
              VIRTUAL_TRACKPADS_SHORTCUT_SERVICE], timeout=10)
         VIRTUAL_TRACKPADS_LIFECYCLE["shortcut"] = shortcut_key
 
+    # Publish only after the requested workers changed successfully, before an
+    # off toggle would stop the existing overlay. It can then paint its final
+    # acknowledgement without a stop/start race or keeping capture alive.
+    if shortcut_notice:
+        publish_virtual_trackpads_notice(config, in_game_mode)
+    notice = virtual_trackpads_notice() if in_game_mode else None
+
     # Gamescope owns the visual overlay; Desktop still permits trackpad input
     # when the user explicitly turns off Game Mode only.
     overlay = (
         capture and in_game_mode and config["enabled"]
         and not config["blockTouchscreen"] and config["mode"] != "halves"
     )
-    overlay_key = config["screen"] if overlay else None
-    if VIRTUAL_TRACKPADS_LIFECYCLE.get("overlay", "unchecked") != overlay_key:
-        action = "restart" if overlay else "stop"
+    overlay_key = config["screen"] if overlay else notice["screen"] if notice else None
+    previous_overlay = VIRTUAL_TRACKPADS_LIFECYCLE.get("overlay", "unchecked")
+    notice_deadline = VIRTUAL_TRACKPADS_LIFECYCLE.get("overlay_notice_until")
+    expired_notice_worker = notice_deadline is not None and time.time() >= notice_deadline
+    if previous_overlay != overlay_key or overlay_key and expired_notice_worker:
+        # A notice-only worker exits on its own at the deadline. A new request
+        # can arrive before our next reconciliation; start it again even if
+        # the selected screen has not changed. start is safe if still alive.
+        action = "start" if previous_overlay == overlay_key else "restart" if overlay_key else "stop"
         result = session_systemctl(action, VIRTUAL_TRACKPADS_OVERLAY_SERVICE, check=False, timeout=10)
         # There may be no user manager yet during boot. Retry once it exists.
         if result.returncode == 0:
             VIRTUAL_TRACKPADS_LIFECYCLE["overlay"] = overlay_key
+        else:
+            return
+    VIRTUAL_TRACKPADS_LIFECYCLE["overlay_notice_until"] = notice["expires"] if notice and not overlay else None
 
 
 def action_get_virtual_trackpads(request):
@@ -575,7 +633,7 @@ def action_get_virtual_trackpads(request):
     return result
 
 
-def action_set_virtual_trackpads(request):
+def action_set_virtual_trackpads(request, *, shortcut_notice=False):
     requested = request.get("config")
     if not isinstance(requested, dict):
         raise ValueError("invalid virtual trackpad configuration")
@@ -628,7 +686,7 @@ def action_set_virtual_trackpads(request):
         if current != "deck-uhid":
             raise RuntimeError("select Steam Deck controller emulation before enabling virtual trackpads")
     atomic_write(VIRTUAL_TRACKPADS_CONFIG, json.dumps(requested, separators=(",", ":")) + "\n")
-    sync_virtual_trackpads(requested)
+    sync_virtual_trackpads(requested, shortcut_notice=shortcut_notice)
     result = dict(requested)
     result["supported"] = True
     result["controllerType"] = action_get_controller_type({})["value"]
@@ -644,7 +702,7 @@ def action_toggle_virtual_trackpads(_request):
     config["blockTouchscreen"] = False
     if config["enabled"] and not (config["leftEnabled"] or config["rightEnabled"]):
         config["leftEnabled"] = config["rightEnabled"] = True
-    return action_set_virtual_trackpads({"config": config})
+    return action_set_virtual_trackpads({"config": config}, shortcut_notice=True)
 
 
 def action_reset_virtual_trackpads(request):

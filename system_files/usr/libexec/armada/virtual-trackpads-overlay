@@ -12,11 +12,12 @@ from pathlib import Path
 
 sys.path.insert(0, "/usr/lib/armada")
 from armada_overlay_session import discover_gamescope_environment, screen_for_device
-from armada_virtual_trackpads import sanitize_config
+from armada_virtual_trackpads import sanitize_config, trackpad_rect
 
 
 CONFIG_PATH = Path(os.environ.get("ARMADA_VIRTUAL_TRACKPADS_CONFIG_PATH", "/etc/armada/virtual-trackpads.json"))
 STATE_PATH = Path("/run/armada/virtual-trackpads-state.json")
+NOTICE_PATH = Path(os.environ.get("ARMADA_VIRTUAL_TRACKPADS_NOTICE_PATH", "/run/armada/virtual-trackpads-notice.json"))
 
 
 def read_device_environment():
@@ -53,14 +54,36 @@ def overlay_config(device_values):
     config["screen"] = screen_for_device(config.get("screen", "primary"), device_values)
     return config
 
+
+def current_notice(now=None):
+    """Accept only a short-lived, successful shortcut event from the manager."""
+    notice = load_json(NOTICE_PATH, {})
+    now = time.time() if now is None else now
+    try:
+        created, expires = float(notice["created"]), float(notice["expires"])
+        if (type(notice["enabled"]) is not bool or
+                notice.get("screen") not in ("primary", "secondary") or
+                not math.isfinite(created) or not math.isfinite(expires) or
+                not created <= now < expires or not 0 < expires - created <= 3):
+            return {}
+    except (KeyError, ValueError, TypeError, OverflowError):
+        return {}
+    return dict(notice, created=created, expires=expires)
+
+
+def overlay_screen(config, notice):
+    if overlay_enabled(config) and config.get("mode") != "halves":
+        return config.get("screen", "primary")
+    return notice.get("screen")
+
 # Importing Gtk initializes it, including a cached success/failure flag inside
 # PyGObject. A service starts before Steam, so discover the session FIRST.
 if __name__ == "__main__":
     device_values = read_device_environment()
     initial_config = overlay_config(device_values)
-    if not overlay_enabled(initial_config):
+    screen = overlay_screen(initial_config, current_notice())
+    if screen is None:
         sys.exit(0)
-    screen = initial_config.get("screen", "primary")
     display_name = discover_gamescope_environment(screen=screen)
     print(f"virtual-trackpads-overlay: using {screen} display {display_name}", flush=True)
 
@@ -168,9 +191,10 @@ class TrackpadOverlay(Gtk.Application):
         self.height = 1080
         self.device_values = device_values if device_values is not None else read_device_environment()
         self.config = overlay_config(self.device_values)
+        self.notice = current_notice()
         # Bind the process to the screen whose credentials initialized GTK.
         # A setting can change while discovery waits for Steam to start.
-        self.screen = screen or self.config.get("screen", "primary")
+        self.screen = screen or overlay_screen(self.config, self.notice) or self.config.get("screen", "primary")
         self.state = {}
         self.last_active = {"left": 0.0, "right": 0.0}
         self.fade = {"left": 0.0, "right": 0.0}
@@ -227,7 +251,8 @@ class TrackpadOverlay(Gtk.Application):
         config_changed = self.config_stamp is not None and next_stamp != self.config_stamp
         self.config_stamp = next_stamp
         self.config = overlay_config(self.device_values)
-        if not overlay_enabled(self.config) or self.config.get("screen", "primary") != self.screen:
+        self.notice = current_notice()
+        if overlay_screen(self.config, self.notice) != self.screen:
             # The existing Armada Control service owns this process's lifetime.
             # Exiting also destroys the surface and removes the overlay plane.
             # It will start a new process with fresh GTK credentials on screen
@@ -237,7 +262,7 @@ class TrackpadOverlay(Gtk.Application):
         if config_changed:
             self.preview_until = now + float(self.config.get("hideDelay", 1))
         self.state = load_json(STATE_PATH, {})
-        enabled = bool(self.config.get("enabled")) and self.config.get("mode") != "halves"
+        enabled = overlay_enabled(self.config) and self.config.get("mode") != "halves"
         previewing = enabled and now < self.preview_until
         auto_hide = bool(self.config.get("autoHide", True))
         hold_seconds = float(self.config.get("hideDelay", 1))
@@ -258,7 +283,7 @@ class TrackpadOverlay(Gtk.Application):
                 self.fade[side] = max(target, self.fade[side] - speed)
             anything_visible |= self.fade[side] > 0.001
         center_visible = enabled and bool(self.config.get("centerDotEnabled")) and self.config.get("mode") != "floating"
-        has_visual = anything_visible or center_visible or previewing
+        has_visual = anything_visible or center_visible or previewing or bool(self.notice)
         # Queue one final transparent frame after the fade reaches zero so an
         # old pad image cannot remain in Gamescope's dedicated overlay plane.
         if self.area is not None and (has_visual or self.had_visual):
@@ -267,15 +292,12 @@ class TrackpadOverlay(Gtk.Application):
         return GLib.SOURCE_CONTINUE
 
     def pad_rect(self, side, zone):
-        size = float(self.config.get(f"{side}Size", 35)) / 100.0 * self.height
-        gap = float(self.config.get("edgeGap", 0))
-        if zone == "floating":
-            x = float(self.state.get(f"{side}X", 0.25 if side == "left" else 0.75)) * self.width - size / 2
-            y = float(self.state.get(f"{side}Y", 0.5)) * self.height - size / 2
-        else:
-            x = gap if side == "left" else self.width - gap - size
-            y = gap if zone == "top" else self.height - gap - size
-        return x, y, size, size
+        return trackpad_rect(
+            side, zone, self.config,
+            float(self.state.get(f"{side}X", 0.25 if side == "left" else 0.75)),
+            float(self.state.get(f"{side}Y", 0.5)),
+            aspect_ratio=self.width / self.height, pixel_height=self.height,
+        )
 
     def zones(self, side):
         mode = self.config.get("mode", "simple")
@@ -336,7 +358,8 @@ class TrackpadOverlay(Gtk.Application):
         if not self.reported_frame:
             print("virtual-trackpads-overlay: first GTK/Cairo frame rendered", flush=True)
             self.reported_frame = True
-        if not self.config.get("enabled") or self.config.get("mode") == "halves":
+        if not overlay_enabled(self.config) or self.config.get("mode") == "halves":
+            self.draw_notice(context)
             return
         previewing = time.monotonic() < self.preview_until
         for side in ("left", "right"):
@@ -348,6 +371,31 @@ class TrackpadOverlay(Gtk.Application):
                     self.draw_pad(context, side, zone, self.fade[side])
                 if self.config.get("centerDotEnabled") and zone != "floating":
                     self.draw_center(context, side, zone)
+        self.draw_notice(context)
+
+    def draw_notice(self, context):
+        notice = self.notice
+        now = time.time()
+        if not notice or notice.get("screen") != self.screen or now >= notice["expires"]:
+            return
+        text = "Virtual trackpads enabled" if notice["enabled"] else "Virtual trackpads disabled"
+        alpha = clamp((now - notice["created"]) / 0.1) * clamp((notice["expires"] - now) / 0.2)
+        font_size = clamp(self.height * 0.024, 16, 30)
+        context.save()
+        context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        context.set_font_size(font_size)
+        extents = context.text_extents(text)
+        padding_x, padding_y = font_size, font_size * 0.65
+        width, height = extents.width + padding_x * 2, font_size + padding_y * 2
+        x, y = (self.width - width) / 2, max(16, self.height * 0.045)
+        rounded_rectangle(context, x, y, width, height, height / 2)
+        context.set_source_rgba(0.055, 0.07, 0.09, 0.92 * alpha)
+        context.fill()
+        context.set_source_rgba(1, 1, 1, alpha)
+        context.move_to(x + padding_x - extents.x_bearing,
+                        y + (height - extents.height) / 2 - extents.y_bearing)
+        context.show_text(text)
+        context.restore()
 
 
 if __name__ == "__main__":
