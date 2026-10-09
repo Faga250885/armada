@@ -293,21 +293,23 @@ for rotation, expected in expected_centers.items():
 print("Virtual trackpad geometry and configuration tests passed")
 PYEOF
 
-grep -Fq 'borderRadius: `${config.borderRadius / 2}%`' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
-grep -Fq 'context.arc(' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
-grep -Fq 'const holdMs = config.hideDelay * 1000' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
-grep -Fq 'backgroundStyle === "dots"' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+# Rendering lives in the native GTK overlay; the runtime overlay tests cover
+# repainting, background modes, fading, rotation, and shortcut notices.
+grep -Fq 'radius = min(width, height) / 2.0 * clamp(float(self.config.get("borderRadius", 28)) / 100.0)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+grep -Fq 'context.arc(x + base_x, y + base_y, dot_size / 2.0, 0, math.tau)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+grep -Fq 'hold_seconds = float(self.config.get("hideDelay", 1))' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
+grep -Fq 'if background == "dots":' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'game_mode_active' "$ROOT/system_files/usr/lib/armada/armada_virtual_trackpads.py"
-grep -Fq 'config.mode === "halves"' "$ROOT/decky/armada-control/src/components/VirtualTrackpadOverlay.tsx"
+grep -Fq 'if not overlay_enabled(self.config) or self.config.get("mode") == "halves":' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq '{ id: "Trackpads", title: tabIcons.Trackpads' "$ROOT/decky/armada-control/src/Content.tsx"
 ! grep -Fq '<Trackpads config={config} setConfig={setConfig} />' "$ROOT/decky/armada-control/src/tabs/Settings.tsx"
 grep -Fq 'fcntl.ioctl(fd, EVIOCGRAB, 1)' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'Touchpad:{side.title()}Pad:Motion' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'Touchpad:{side.title()}Pad:Button:Press' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 ! grep -Fq 'Touchpad:{side.title()}Pad:Touch:' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
-grep -Fq '.write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/inputplumber/patches/0004-add-dbus-touch-events.patch"
-! grep -Fq 'blocking_write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/inputplumber/patches/0004-add-dbus-touch-events.patch"
-! grep -Fq '.blocking_write_send_event(event)' "$ROOT/packages/inputplumber/patches/0004-add-dbus-touch-events.patch"
+grep -Fq '.write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/inputplumber/patches/0005-add-dbus-touch-events.patch"
+! grep -Fq 'blocking_write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/inputplumber/patches/0005-add-dbus-touch-events.patch"
+! grep -Fq '.blocking_write_send_event(event)' "$ROOT/packages/inputplumber/patches/0005-add-dbus-touch-events.patch"
 grep -Fq 'className="armada-trackpads-tab"' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
 grep -Fq 'ARMADA_VIRTUAL_TRACKPADS_OVERLAY' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'XFixesSetWindowShapeRegion' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
@@ -334,4 +336,3 @@ grep -Fq 'w->isExternalOverlay || w->isArmadaOverlay' "$ROOT/packages/gamescope/
 grep -Fq 'pPaintFocus->armadaOverlayWindow && pPaintFocus->armadaOverlayWindow->opacity' "$ROOT/packages/gamescope/patches/0028-steamcompmgr-armada-virtual-trackpad-overlay.patch"
 python3 "$ROOT/tests/virtual-trackpads-haptics-test.py"
 python3 "$ROOT/tests/virtual-trackpads-lifecycle-test.py"
-! grep -Fq '<VirtualTrackpadOverlay' "$ROOT/decky/armada-control/src/Content.tsx"
