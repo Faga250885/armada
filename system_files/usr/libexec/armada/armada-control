@@ -540,7 +540,7 @@ def virtual_trackpads_notice():
             return None
         if notice.get("screen") not in ("primary", "secondary"):
             return None
-        return notice
+        return {**notice, "created": created, "expires": expires}
     except (OSError, ValueError, TypeError, KeyError, OverflowError):
         return None
 
@@ -595,9 +595,9 @@ def sync_virtual_trackpads(config=None, *, shortcut_notice=False):
              VIRTUAL_TRACKPADS_SHORTCUT_SERVICE], timeout=10)
         VIRTUAL_TRACKPADS_LIFECYCLE["shortcut"] = shortcut_key
 
-    # Publish only after the requested workers changed successfully, before an
-    # off toggle would stop the existing overlay. It can then paint its final
-    # acknowledgement without a stop/start race or keeping capture alive.
+    # Publish only after the requested workers changed successfully. The
+    # overlay may already have exited after reading the newly saved off state;
+    # a successful shortcut explicitly restarts it with this notice available.
     if shortcut_notice:
         publish_virtual_trackpads_notice(config, in_game_mode)
     notice = virtual_trackpads_notice() if in_game_mode else None
@@ -612,11 +612,17 @@ def sync_virtual_trackpads(config=None, *, shortcut_notice=False):
     previous_overlay = VIRTUAL_TRACKPADS_LIFECYCLE.get("overlay", "unchecked")
     notice_deadline = VIRTUAL_TRACKPADS_LIFECYCLE.get("overlay_notice_until")
     expired_notice_worker = notice_deadline is not None and time.time() >= notice_deadline
-    if previous_overlay != overlay_key or overlay_key and expired_notice_worker:
+    restart_for_notice = shortcut_notice and notice is not None
+    if previous_overlay != overlay_key or overlay_key and (expired_notice_worker or restart_for_notice):
         # A notice-only worker exits on its own at the deadline. A new request
         # can arrive before our next reconciliation; start it again even if
         # the selected screen has not changed. start is safe if still alive.
-        action = "start" if previous_overlay == overlay_key else "restart" if overlay_key else "stop"
+        if restart_for_notice:
+            action = "restart"
+        elif previous_overlay == overlay_key:
+            action = "start"
+        else:
+            action = "restart" if overlay_key else "stop"
         result = session_systemctl(action, VIRTUAL_TRACKPADS_OVERLAY_SERVICE, check=False, timeout=10)
         # There may be no user manager yet during boot. Retry once it exists.
         if result.returncode == 0:
