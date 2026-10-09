@@ -1,5 +1,5 @@
 import { Field, PanelSection, Tabs } from "@decky/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { getConfig, getInstalledGames, savePowerConfig, saveTweaks } from "./backend";
 import { RgbLighting } from "./components/RgbLighting";
@@ -24,6 +24,7 @@ export function Content() {
   const savedPowerSnapshot = useRef("");
   const savedTweaksSnapshot = useRef("");
   const installedGamesRequested = useRef(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const load = useCallback(async () => {
     try {
       const next = await getConfig();
@@ -81,13 +82,35 @@ export function Content() {
   }, [!!config]);
   useDebouncedSave({ config, field: "power", snapshot: savedPowerSnapshot, save: savePowerConfig, setConfig, onError: load });
   useDebouncedSave({ config, field: "tweaks", snapshot: savedTweaksSnapshot, save: saveTweaks, setConfig, onError: load });
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const view = menu?.ownerDocument.defaultView;
+    if (!menu || !view) return;
+    const measure = () => {
+      const rect = menu.getBoundingClientRect();
+      if (!rect.width || !menu.offsetWidth) return;
+      const scale = rect.width / menu.offsetWidth;
+      // The QAM reserves 40 logical pixels for the controller footer. Measure
+      // from this plugin's actual top so tabs cannot extend underneath it.
+      const height = Math.max(0, Math.floor((view.innerHeight - rect.top) / scale - 40));
+      menu.style.setProperty("--armada-menu-height", `${height}px`);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (menu.parentElement) observer.observe(menu.parentElement);
+    view.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      view.removeEventListener("resize", measure);
+    };
+  }, [!!config]);
   if (!config) return <PanelSection title="Armada Control"><Field label={message === "Loading" ? t("common.loading") : message} /></PanelSection>;
   const tabContent = (content: ReactNode) => (
     <div className="armada-control-tab-content">{content}</div>
   );
   return (
     <>
-      <div className="armada-control-tabs">
+      <div className="armada-control-tabs" ref={menuRef}>
         <style>{styles}</style>
         <Tabs
           activeTab={tab}
