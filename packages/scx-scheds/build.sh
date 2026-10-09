@@ -64,6 +64,10 @@ grep -q -- '--exclude scx_nitosis' "${SPEC}" || {
 rpmspec -P "${SPEC}" >/dev/null
 
 dnf -y builddep "${SPEC}"
+# Terra's cargo macros select -fuse-ld=mold, but this pinned spec only requires
+# lld. Install the requested linker explicitly in this package's builder.
+dnf -y install mold
+cc -fuse-ld=mold -Wl,--version
 anda build --rpm-builder=rpmbuild "${PKG}/pkg"
 
 cp /tmp/packages/anda-build/rpm/rpms/scx-scheds-[0-9]*.rpm /work/out/
