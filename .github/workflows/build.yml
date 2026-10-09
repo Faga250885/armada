@@ -6,6 +6,11 @@ on:
       - main
       - staging
   workflow_dispatch:
+    inputs:
+      tests_only:
+        description: "Validate the isolated trackpad test branch without publishing"
+        type: boolean
+        default: false
 
 env:
   ARMADA_CANONICAL_IMAGE: "ghcr.io/armada-os/armada"
@@ -21,8 +26,38 @@ concurrency:
   queue: max
 
 jobs:
+  # Test-branch only: do not include this CI/publication commit in the upstream PR.
+  trackpad_test:
+    name: Trackpad runtime tests
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install graphical test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-gi-cairo python3-cairo gir1.2-gtk-4.0 xvfb xauth libxfixes3 dbus-daemon
+      - name: Verify geometry, configuration, lifecycle, shortcuts and haptics
+        run: bash tests/virtual-trackpads-test.sh
+      - name: Verify real GTK overlay lifecycle and screen routing
+        env:
+          ARMADA_OVERLAY_TEST_OUTPUT: ${{ runner.temp }}/overlay-render
+        run: timeout 120s dbus-run-session -- /usr/bin/python3 tests/virtual-trackpads-overlay-test.py
+      - name: Upload rendered overlay frames
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: overlay-render
+          path: ${{ runner.temp }}/overlay-render
+          if-no-files-found: ignore
+
   packages:
     name: Packages
+    needs: trackpad_test
+    if: ${{ !inputs.tests_only }}
     permissions:
       contents: read
       packages: write
@@ -89,6 +124,12 @@ jobs:
 
       - name: Check signing key
         run: |
+          if [ "${{ github.repository }}" = Faga250885/armada ] &&
+             [ "${{ github.ref }}" = refs/heads/virtual-trackpads-review-test ] &&
+             [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            echo "::warning::Isolated fork test image; not an official signed Armada release."
+            exit 0
+          fi
           if [ -z "${{ secrets.SIGNING_SECRET }}" ]; then
             echo "::error::SIGNING_SECRET is not set — refusing to publish an unsigned image (devices verify ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }})."
             exit 1
@@ -302,7 +343,11 @@ jobs:
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
 
       - name: Publish channel tags
-        if: env.HAVE_SIGNING_SECRET == 'true'
+        if: >-
+          env.HAVE_SIGNING_SECRET == 'true' ||
+          (github.repository == 'Faga250885/armada' &&
+           github.ref == 'refs/heads/virtual-trackpads-review-test' &&
+           github.event_name == 'workflow_dispatch')
         run: |
           set -euo pipefail
           IMAGE_FULL="${IMAGE_REGISTRY}/${IMAGE_NAME}"
@@ -319,7 +364,7 @@ jobs:
             fi
           done
           {
-            printf '### Signed container published\n\n'
+            printf '### Container published (isolated test branch may be unsigned)\n\n'
             printf 'Digest: `%s@%s`\n\n' "${IMAGE_FULL}" "${{ steps.push.outputs.digest }}"
             printf 'Promote this exact build with source: `build-%s-%s-%s`\n' \
               "${{ steps.version.outputs.version }}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
