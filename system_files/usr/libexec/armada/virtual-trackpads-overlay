@@ -11,14 +11,58 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, "/usr/lib/armada")
-from armada_overlay_session import discover_gamescope_environment
-from armada_virtual_trackpads import apply_deck_like_size, sanitize_config
+from armada_overlay_session import discover_gamescope_environment, screen_for_device
+from armada_virtual_trackpads import sanitize_config
+
+
+CONFIG_PATH = Path(os.environ.get("ARMADA_VIRTUAL_TRACKPADS_CONFIG_PATH", "/etc/armada/virtual-trackpads.json"))
+STATE_PATH = Path("/run/armada/virtual-trackpads-state.json")
+
+
+def read_device_environment():
+    try:
+        output = subprocess.check_output(
+            [os.environ.get("ARMADA_DEVICE_ENV", "/usr/libexec/armada/device-env")],
+            text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    result = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            result[key] = value.strip().strip("'\"")
+    return result
+
+
+def load_json(path, fallback):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else fallback
+    except (OSError, ValueError, TypeError):
+        return fallback
+
+
+def overlay_enabled(config):
+    return bool(config.get("enabled") and not config.get("blockTouchscreen") and
+                (config.get("leftEnabled") or config.get("rightEnabled")))
+
+
+def overlay_config(device_values):
+    config = sanitize_config(load_json(CONFIG_PATH, {}))
+    config["screen"] = screen_for_device(config.get("screen", "primary"), device_values)
+    return config
 
 # Importing Gtk initializes it, including a cached success/failure flag inside
 # PyGObject. A service starts before Steam, so discover the session FIRST.
 if __name__ == "__main__":
-    display_name = discover_gamescope_environment()
-    print(f"virtual-trackpads-overlay: using Steam display {display_name}", flush=True)
+    device_values = read_device_environment()
+    initial_config = overlay_config(device_values)
+    if not overlay_enabled(initial_config):
+        sys.exit(0)
+    screen = initial_config.get("screen", "primary")
+    display_name = discover_gamescope_environment(screen=screen)
+    print(f"virtual-trackpads-overlay: using {screen} display {display_name}", flush=True)
 
 import cairo
 import gi
@@ -30,51 +74,16 @@ gi.require_foreign("cairo")
 from gi.repository import Gdk, GdkX11, GLib, Gtk
 
 
-CONFIG_PATH = Path("/etc/armada/virtual-trackpads.json")
-STATE_PATH = Path("/run/armada/virtual-trackpads-state.json")
 FADE_SECONDS = 0.28
 FRAME_MS = 16
-DEVICE_ENV = os.environ.get("ARMADA_DEVICE_ENV", "/usr/libexec/armada/device-env")
-
-
-def device_env():
-    try:
-        output = subprocess.check_output([DEVICE_ENV], text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return {}
-    result = {}
-    for line in output.splitlines():
-        key, separator, value = line.partition("=")
-        if separator:
-            result[key] = value.strip().strip("'\"")
-    return result
 
 
 def clamp(value, minimum=0.0, maximum=1.0):
     return max(minimum, min(maximum, value))
 
 
-def load_json(path, fallback):
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else fallback
-    except (OSError, ValueError, TypeError):
-        return fallback
-
-
 def white(opacity):
     return 1.0, 1.0, 1.0, clamp(opacity, 0.0, 50.0) / 100.0
-
-
-def shortcut_label(enabled, locale=None):
-    language = (locale or os.environ.get("LANG", "en")).lower().split("_")[0]
-    labels = {
-        "es": ("Trackpads activados", "Táctil normal"),
-        "pt": ("Trackpads ativados", "Toque normal"),
-        "zh": ("触控板已开启", "正常触控"),
-    }
-    on, off = labels.get(language, ("Trackpads on", "Normal touch"))
-    return on if enabled else off
 
 
 def rounded_rectangle(context, x, y, width, height, radius):
@@ -150,14 +159,18 @@ class X11Overlay:
         print(f"virtual-trackpads-overlay: mapped xid={self.window:#x}, size={width}x{height}", flush=True)
 
 class TrackpadOverlay(Gtk.Application):
-    def __init__(self):
+    def __init__(self, screen=None, device_values=None):
         super().__init__(application_id="dev.armada.VirtualTrackpadsOverlay")
         self.window = None
         self.area = None
         self.xoverlay = X11Overlay()
         self.width = 1920
         self.height = 1080
-        self.config = {}
+        self.device_values = device_values if device_values is not None else read_device_environment()
+        self.config = overlay_config(self.device_values)
+        # Bind the process to the screen whose credentials initialized GTK.
+        # A setting can change while discovery waits for Steam to start.
+        self.screen = screen or self.config.get("screen", "primary")
         self.state = {}
         self.last_active = {"left": 0.0, "right": 0.0}
         self.fade = {"left": 0.0, "right": 0.0}
@@ -165,7 +178,6 @@ class TrackpadOverlay(Gtk.Application):
         self.config_stamp = None
         self.preview_until = 0.0
         self.had_visual = False
-        self.device_env = device_env()
         self.reported_frame = False
 
     def do_activate(self):
@@ -214,9 +226,14 @@ class TrackpadOverlay(Gtk.Application):
             next_stamp = None
         config_changed = self.config_stamp is not None and next_stamp != self.config_stamp
         self.config_stamp = next_stamp
-        self.config = apply_deck_like_size(
-            sanitize_config(load_json(CONFIG_PATH, {})), self.device_env
-        )
+        self.config = overlay_config(self.device_values)
+        if not overlay_enabled(self.config) or self.config.get("screen", "primary") != self.screen:
+            # The existing Armada Control service owns this process's lifetime.
+            # Exiting also destroys the surface and removes the overlay plane.
+            # It will start a new process with fresh GTK credentials on screen
+            # changes; a GDK display cannot be retargeted after initialization.
+            self.quit()
+            return GLib.SOURCE_REMOVE
         if config_changed:
             self.preview_until = now + float(self.config.get("hideDelay", 1))
         self.state = load_json(STATE_PATH, {})
@@ -241,8 +258,7 @@ class TrackpadOverlay(Gtk.Application):
                 self.fade[side] = max(target, self.fade[side] - speed)
             anything_visible |= self.fade[side] > 0.001
         center_visible = enabled and bool(self.config.get("centerDotEnabled")) and self.config.get("mode") != "floating"
-        notice_visible = time.time() < float(self.state.get("shortcutNoticeUntil", 0))
-        has_visual = anything_visible or center_visible or previewing or notice_visible
+        has_visual = anything_visible or center_visible or previewing
         # Queue one final transparent frame after the fade reaches zero so an
         # old pad image cannot remain in Gamescope's dedicated overlay plane.
         if self.area is not None and (has_visual or self.had_visual):
@@ -320,17 +336,6 @@ class TrackpadOverlay(Gtk.Application):
         if not self.reported_frame:
             print("virtual-trackpads-overlay: first GTK/Cairo frame rendered", flush=True)
             self.reported_frame = True
-        if time.time() < float(self.state.get("shortcutNoticeUntil", 0)):
-            label = shortcut_label(bool(self.state.get("shortcutNoticeEnabled")))
-            context.save()
-            context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-            context.set_font_size(max(16, min(self.width, self.height) * 0.028))
-            metrics = context.text_extents(label)
-            context.set_source_rgba(1, 1, 1, 0.5)
-            context.move_to((self.width - metrics.width) / 2 - metrics.x_bearing,
-                            self.height * 0.11)
-            context.show_text(label)
-            context.restore()
         if not self.config.get("enabled") or self.config.get("mode") == "halves":
             return
         previewing = time.monotonic() < self.preview_until
@@ -353,4 +358,4 @@ if __name__ == "__main__":
         f"virtual-trackpads-overlay: connected to Gamescope display {display_name}",
         flush=True,
     )
-    TrackpadOverlay().run(None)
+    TrackpadOverlay(screen=screen, device_values=device_values).run(None)

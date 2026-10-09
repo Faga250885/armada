@@ -1,9 +1,22 @@
-"""Find Steam's primary Gamescope X11 session without initializing GTK."""
+"""Find the selected Gamescope X11 session without initializing GTK."""
 
 import ctypes
 import os
+import subprocess
 import time
 from pathlib import Path
+
+
+def screen_for_device(requested, device_values):
+    """Match the control service when a config is moved to another handheld.
+
+    Hardware absence falls back to primary. A known secondary display whose
+    compositor is stopped remains secondary: session availability is checked
+    separately and must never silently move its overlay to the primary screen.
+    """
+    secondary_supported = bool(device_values.get("ARMADA_SECONDARY_CONNECTOR") and
+                               device_values.get("ARMADA_SECONDARY_TOUCHSCREEN"))
+    return "secondary" if requested == "secondary" and secondary_supported else "primary"
 
 
 def xwayland_authorities(proc_root=Path("/proc")):
@@ -48,6 +61,37 @@ def steam_environments(proc_root=Path("/proc")):
         if environment.get("DISPLAY") and environment.get("GAMESCOPE_WAYLAND_DISPLAY"):
             result.append(environment)
     return result
+
+
+def secondary_environments(runtime_root=None, runner="/usr/bin/armada-run-bottom"):
+    """Use Armada's existing bottom-screen session, never an isolated game.
+
+    The bottom compositor publishes its environment through armada-run-bottom.
+    It is a separate Gamescope instance, with its own root Xwayland (server 0),
+    rather than another Xwayland server inside Steam's primary compositor.
+    Requiring the live socket avoids using the environment of a stopped panel.
+    """
+    runtime = Path(runtime_root or os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+    if not (runtime / "gamescope-secondary").is_socket() or not (runtime / "armada-bottom-env").is_file():
+        return []
+    try:
+        output = subprocess.check_output(
+            [runner, "--", "/usr/bin/env", "-0"],
+            env=dict(os.environ, XDG_RUNTIME_DIR=str(runtime)), timeout=2,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    allowed = {"DISPLAY", "XAUTHORITY", "GAMESCOPE_WAYLAND_DISPLAY"}
+    environment = {}
+    for value in output.split(b"\0"):
+        key, separator, data = value.partition(b"=")
+        name = os.fsdecode(key)
+        if separator and name in allowed:
+            environment[name] = os.fsdecode(data)
+    if environment.get("DISPLAY") and environment.get("GAMESCOPE_WAYLAND_DISPLAY") == "gamescope-secondary":
+        return [environment]
+    return []
 
 
 def can_open_x11(display, authority):
@@ -97,15 +141,17 @@ def can_open_x11(display, authority):
         x11.XCloseDisplay(connection)
 
 
-def discover_gamescope_environment(timeout=30.0, proc_root=Path("/proc")):
+def discover_gamescope_environment(timeout=30.0, proc_root=Path("/proc"), screen="primary"):
     """Set validated credentials BEFORE importing gi.repository.Gtk.
 
     PyGObject's Gtk override caches init_check() during import. Opening a GDK
     display later does not repair that cached failure in Gtk.Window.__init__.
     """
+    if screen not in ("primary", "secondary"):
+        raise ValueError("unknown trackpad screen")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        candidates = steam_environments(proc_root)
+        candidates = secondary_environments() if screen == "secondary" else steam_environments(proc_root)
         candidates.sort(key=lambda item: bool(item.get("XAUTHORITY")), reverse=True)
         authorities = xwayland_authorities(proc_root)
         attempted = set()
@@ -121,4 +167,4 @@ def discover_gamescope_environment(timeout=30.0, proc_root=Path("/proc")):
                 os.environ["GAMESCOPE_WAYLAND_DISPLAY"] = environment["GAMESCOPE_WAYLAND_DISPLAY"]
                 return display
         time.sleep(0.25)
-    raise RuntimeError("Steam's primary Gamescope Xwayland display is not available")
+    raise RuntimeError(f"{screen.title()} Gamescope Xwayland display is not available")

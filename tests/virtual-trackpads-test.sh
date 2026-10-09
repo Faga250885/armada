@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from armada_virtual_trackpads import DEFAULT_CONFIG, ShortcutHold, apply_deck_like_size, game_mode_active, panel_aspect_ratio, physical_panel_height_mm, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_at, trackpad_coordinates
+from armada_virtual_trackpads import DEFAULT_CONFIG, SHORTCUT_BUTTONS, ShortcutHold, display_dimensions, game_mode_active, panel_aspect_ratio, point_in_trackpad_bounds, rotate_touch, sanitize_config, should_capture_touch, trackpad_at, trackpad_coordinates, transform_touch
 
 config = sanitize_config({
     "enabled": True,
@@ -43,13 +43,16 @@ assert sanitize_config({})["enabled"] is False
 assert not should_capture_touch(sanitize_config({}), True)
 assert {key: DEFAULT_CONFIG[key] for key in (
     "enabled", "blockTouchscreen", "gameModeOnly", "leftEnabled", "rightEnabled",
-    "mode", "deckLikeSize", "edgeGap", "limitToBounds", "hapticStrength",
+    "mode", "edgeGap", "limitToBounds", "hapticStrength",
+    "shortcutEnabled", "shortcutButtons", "shortcutHoldSeconds", "screen", "touchRotation", "touchMirror",
     "autoHide", "hideDelay", "borderWidth", "borderOpacity", "borderRadius",
     "backgroundStyle", "dotSize", "dotGap", "backgroundOpacity", "centerDotEnabled",
 )} == {
     "enabled": False, "blockTouchscreen": False, "gameModeOnly": True,
     "leftEnabled": True, "rightEnabled": True, "mode": "simple",
-    "deckLikeSize": True, "edgeGap": 8, "limitToBounds": True,
+    "edgeGap": 8, "limitToBounds": True,
+    "shortcutEnabled": True, "shortcutButtons": ["L3", "R3"], "shortcutHoldSeconds": 3,
+    "screen": "primary", "touchRotation": "normal", "touchMirror": False,
     "hapticStrength": 60, "autoHide": True, "hideDelay": 1,
     "borderWidth": 2, "borderOpacity": 30, "borderRadius": 24,
     "backgroundStyle": "dots", "dotSize": 1, "dotGap": 4,
@@ -58,7 +61,7 @@ assert {key: DEFAULT_CONFIG[key] for key in (
 fallback_source = Path(os.environ["ARMADA_TEST_ROOT"]) / "decky/armada-control/py_modules/armada_control/trackpads.py"
 fallback = next(ast.literal_eval(node.value) for node in ast.parse(fallback_source.read_text()).body
                 if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "DEFAULT" for target in node.targets))
-assert fallback == {"supported": False, **DEFAULT_CONFIG}
+assert fallback == {"supported": False, "secondaryAvailable": False, **DEFAULT_CONFIG}
 only_game = sanitize_config({"enabled": True, "leftEnabled": True, "gameModeOnly": True})
 assert not should_capture_touch(only_game, False)
 assert should_capture_touch(only_game, True)
@@ -74,7 +77,20 @@ assert sanitize_config({"enabled": True, "blockTouchscreen": True})["enabled"] i
 assert sanitize_config({"tapToClick": False})["tapToClick"] is True
 assert set(config) == set(DEFAULT_CONFIG)
 assert "fixedBottom" not in DEFAULT_CONFIG
-assert DEFAULT_CONFIG["deckLikeSize"] is True
+assert "deckLikeSize" not in DEFAULT_CONFIG
+assert sanitize_config({"deckLikeSize": True, "leftSize": 38})["leftSize"] == 38
+assert sanitize_config({"shortcutHoldSeconds": 0})["shortcutHoldSeconds"] == 0
+for invalid in (True, False, 1, -1, "3", 3.0):
+    assert sanitize_config({"shortcutHoldSeconds": invalid})["shortcutHoldSeconds"] == 3
+for invalid in ([], ["L3", "L3"], ["Unknown"], ["A", "B", "X", "Y", "L3"], "L3+R3"):
+    assert sanitize_config({"shortcutButtons": invalid})["shortcutButtons"] == ["L3", "R3"]
+assert sanitize_config({"shortcutButtons": ["Steam", "R3"]})["shortcutButtons"] == ["Steam", "R3"]
+copy = sanitize_config({})
+copy["shortcutButtons"].append("A")
+assert DEFAULT_CONFIG["shortcutButtons"] == ["L3", "R3"]
+assert sanitize_config({"screen": "secondary", "touchRotation": "upside_down", "touchMirror": True})["screen"] == "secondary"
+assert sanitize_config({"screen": "invalid", "touchRotation": "invalid"})["screen"] == "primary"
+assert sanitize_config({"touchRotation": "invalid"})["touchRotation"] == "normal"
 with tempfile.TemporaryDirectory() as directory:
     runtime = Path(directory)
     user_runtime = runtime / str(os.getuid())
@@ -85,22 +101,25 @@ with tempfile.TemporaryDirectory() as directory:
             gamescope.bind(str(user_runtime / "gamescope-test"))
             (user_runtime / "gamescope-primary").symlink_to("gamescope-test")
             assert game_mode_active(runtime_root=runtime)
+            assert not game_mode_active(runtime_root=runtime, screen="secondary")
+            (user_runtime / "gamescope-secondary").symlink_to("gamescope-test")
+            assert game_mode_active(runtime_root=runtime, screen="secondary")
             (user_runtime / "gamescope-primary").unlink()
             assert not game_mode_active(runtime_root=runtime)
-deck_like = apply_deck_like_size(config, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"})
-assert deck_like["leftSize"] == deck_like["rightSize"] == 47
-manual_size = apply_deck_like_size({**config, "deckLikeSize": False, "leftSize": 38, "rightSize": 38}, {"ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"})
-assert manual_size["leftSize"] == manual_size["rightSize"] == 38
+            assert game_mode_active(runtime_root=runtime, screen="secondary")
 with tempfile.TemporaryDirectory() as directory:
-    no_edid = Path(directory)
-    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "retroid-pocket-5"}, no_edid)["leftSize"] == 47
-    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "ayaneo-pocket-micro2"}, no_edid)["leftSize"] == 66
-    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "ayaneo-pocket-ds"}, no_edid)["leftSize"] == 37
-    assert apply_deck_like_size(config, {"ARMADA_DEVICE_ID": "retroid-pocket-mini-v2"}, no_edid)["leftSize"] > 45
-assert panel_aspect_ratio({"ARMADA_DEVICE_ID": "retroid-pocket-nova"}) == 4 / 3
-assert panel_aspect_ratio({"ARMADA_DEVICE_ID": "ayaneo-pocket-ace"}) == 3 / 2
-assert panel_aspect_ratio({"ARMADA_DEVICE_ID": "unknown"}) == 16 / 9
-assert physical_panel_height_mm({"ARMADA_DEVICE_ID": "retroid-pocket-6", "ARMADA_PANEL_PHYSICAL_HEIGHT_MM": "68.5"}) == 68.5
+    drm = Path(directory)
+    primary, secondary = drm / "card0-DSI-2", drm / "card0-DSI-1"
+    primary.mkdir()
+    secondary.mkdir()
+    (primary / "modes").write_text("1080x1920\n")
+    (secondary / "modes").write_text("960x1280\n")
+    device = {"ARMADA_PRIMARY_CONNECTOR": "DSI-2", "ARMADA_SECONDARY_CONNECTOR": "DSI-1"}
+    assert display_dimensions(device, "primary", drm) == (1920, 1080)
+    assert panel_aspect_ratio(device, "secondary", drm) == 4 / 3
+    # A missing selected display must never use the other display's dimensions.
+    (secondary / "modes").unlink()
+    assert display_dimensions(device, "secondary", drm) == (1920, 1080)
 assert sanitize_config({"leftSize": 100})["leftSize"] == 80
 hold = ShortcutHold(3.0)
 hold.update(True, False, 0.0)
@@ -112,19 +131,28 @@ assert not hold.ready(20.0)
 hold.update(False, True, 20.1)
 hold.update(True, True, 21.0)
 assert hold.ready(24.0)
-with tempfile.TemporaryDirectory() as directory:
-    connector = Path(directory) / "card0-DSI-1"
-    connector.mkdir()
-    edid = bytearray(128)
-    edid[:8] = b"\x00\xff\xff\xff\xff\xff\xff\x00"
-    edid[21], edid[22] = 12, 7
-    (connector / "edid").write_bytes(edid)
-    detected = apply_deck_like_size(config, {}, Path(directory))
-    assert detected["leftSize"] == detected["rightSize"] == 46
+instant = ShortcutHold(0)
+instant.update_pressed({"Steam"}, {"Steam", "R3"}, 1.0)
+assert not instant.ready(1.0)
+instant.update_pressed({"Steam", "R3"}, {"Steam", "R3"}, 2.0)
+assert instant.ready(2.0)
+assert not instant.ready(3.0)
+instant.update_pressed(set(), {"Steam", "R3"}, 3.1)
+instant.update_pressed({"Steam", "R3"}, {"Steam", "R3"}, 4.0)
+assert instant.ready(4.0)
 
 assert rotate_touch(0.25, 0.75, "left") == (0.75, 0.75)
 assert rotate_touch(0.25, 0.75, "right") == (0.25, 0.25)
 assert rotate_touch(0.25, 0.75, "normal") == (0.25, 0.75)
+# Match the compositor's inverse scanout transform: RP6 panel left maps
+# raw top-left to visible top-right, without a second device-specific quirk.
+assert transform_touch(0, 0, {"ARMADA_PANEL_ORIENTATION": "left"}, config) == (1, 0)
+assert transform_touch(0, 0, {"ARMADA_PANEL_ORIENTATION": "right"}, config) == (0, 1)
+assert transform_touch(0.2, 0.3, {}, {**config, "touchRotation": "normal"}) == (0.2, 0.3)
+for rotation, expected in (("normal", (0, 0)), ("right", (1, 0)), ("upside_down", (1, 1)), ("left", (0, 1))):
+    corrected = {**config, "touchRotation": rotation}
+    assert transform_touch(0, 0, {}, corrected) == expected
+    assert transform_touch(0, 0, {}, {**corrected, "touchMirror": True}) == (1 - expected[0], expected[1])
 
 # 35% high square in a 16:9 viewport occupies 19.6875% of its width.
 left = trackpad_at(0.05, 0.9, config)
@@ -171,6 +199,31 @@ assert not point_in_trackpad_bounds(0.49, 0.52, "left", "floating", floating, 0.
 assert point_in_trackpad_bounds(0.05, 0.9, "left", "bottom", simple)
 assert not point_in_trackpad_bounds(0.3, 0.9, "left", "bottom", simple)
 
+# Input boundaries and local pad positions must match the overlay's pixel
+# rectangles on both primary and secondary screens, regardless of resolution.
+for pixel_width, pixel_height in ((1280, 720), (1280, 960), (1920, 1080)):
+    aspect = pixel_width / pixel_height
+    geometry = {**simple, "edgeGap": 80, "leftSize": 35, "rightSize": 35}
+    size = pixel_height * 0.35
+    for side in ("left", "right"):
+        origin_x = 80 if side == "left" else pixel_width - 80 - size
+        for zone in ("top", "bottom"):
+            origin_y = 80 if zone == "top" else pixel_height - 80 - size
+            x = (origin_x + size / 2) / pixel_width
+            y = (origin_y + size / 2) / pixel_height
+            corners = {**geometry, "mode": "corners"}
+            hit = trackpad_zone_at(x, y, corners, aspect, pixel_height)
+            assert hit[:2] == (side, zone)
+            local = trackpad_coordinates(x, y, side, zone, corners, aspect_ratio=aspect, pixel_height=pixel_height)
+            assert all(abs(value - 0.5) < 1e-9 for value in local)
+            assert point_in_trackpad_bounds(x, y, side, zone, corners, aspect_ratio=aspect, pixel_height=pixel_height)
+            # One pixel beyond the visible left edge must not be captured.
+            outside_x = (origin_x - 1) / pixel_width
+            assert not point_in_trackpad_bounds(outside_x, y, side, zone, corners, aspect_ratio=aspect, pixel_height=pixel_height)
+            assert trackpad_zone_at(outside_x, y, corners, aspect, pixel_height) is None
+            if zone == "bottom":
+                assert trackpad_at(x, y, geometry, aspect, pixel_height)[0] == side
+
 print("Virtual trackpad geometry and configuration tests passed")
 PYEOF
 
@@ -190,11 +243,6 @@ grep -Fq '.write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/input
 ! grep -Fq 'blocking_write_send_event(NativeEvent::new(cap, value))' "$ROOT/packages/inputplumber/patches/0004-add-dbus-touch-events.patch"
 ! grep -Fq '.blocking_write_send_event(event)' "$ROOT/packages/inputplumber/patches/0004-add-dbus-touch-events.patch"
 grep -Fq 'className="armada-trackpads-tab"' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
-grep -Fq 'systemctl enable armada-virtual-trackpads.service' "$ROOT/build_files/40-vendor-system-files.sh"
-grep -Fq 'ARMADA_TOUCHSCREEN_ORIENTATION=right' "$ROOT/system_files/usr/lib/armada/devices/retroid-pocket-6.conf"
-grep -Fq 'ARMADA_PANEL_PHYSICAL_HEIGHT_MM=68.5' "$ROOT/system_files/usr/lib/armada/devices/retroid-pocket-6.conf"
-grep -Fq '"ARMADA_TOUCHSCREEN_ORIENTATION"' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
-grep -Fq 'ARMADA_TOUCHSCREEN_ORIENTATION' "$ROOT/system_files/usr/libexec/armada/device-env"
 grep -Fq 'ARMADA_VIRTUAL_TRACKPADS_OVERLAY' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'XFixesSetWindowShapeRegion' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 ! grep -Fq 'b"STEAM_OVERLAY"' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
@@ -203,14 +251,9 @@ grep -Fq 'GAMESCOPE_WAYLAND_DISPLAY' "$ROOT/system_files/usr/lib/armada/armada_o
 grep -Fq 'def xwayland_authorities(' "$ROOT/system_files/usr/lib/armada/armada_overlay_session.py"
 grep -Fq 'if not can_open_x11(display, authority)' "$ROOT/system_files/usr/lib/armada/armada_overlay_session.py"
 grep -Fq 'gi.require_version("Gdk", "4.0")' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
-grep -Fq 'display_name = discover_gamescope_environment()' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'class MouseClickSink' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'ecodes.BTN_LEFT' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'self.mouse_click.click()' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
-grep -Fq 'BTN_THUMBL' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
-grep -Fq 'BTN_THUMBR' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
-grep -Fq 'self.shortcut.ready(' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
-grep -Fq 'shortcutNoticeUntil' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads-overlay"
 grep -Fq 'get_virtual_trackpads' "$ROOT/decky/armada-control/main.py"
 grep -Fq 'reset_virtual_trackpads' "$ROOT/decky/armada-control/main.py"
 grep -Fq '"reset_virtual_trackpads": action_reset_virtual_trackpads' "$ROOT/system_files/usr/libexec/armada/armada-control"
@@ -220,10 +263,9 @@ grep -Fq 'self.ip.press(side, True)' "$ROOT/system_files/usr/libexec/armada/virt
 grep -Fq 'self.press_releases[side] = {' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 grep -Fq 'pending["index"]' "$ROOT/system_files/usr/libexec/armada/virtual-trackpads"
 ! grep -Fq 'fixedBottom' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
-grep -Fq 'pads.deckLikeSize' "$ROOT/decky/armada-control/src/tabs/Trackpads.tsx"
 grep -Fq 'ARMADA_OVERLAY_PROP' "$ROOT/packages/gamescope/patches/0028-steamcompmgr-armada-virtual-trackpad-overlay.patch"
 grep -Fq 'w->isExternalOverlay || w->isArmadaOverlay' "$ROOT/packages/gamescope/patches/0028-steamcompmgr-armada-virtual-trackpad-overlay.patch"
 grep -Fq 'pPaintFocus->armadaOverlayWindow && pPaintFocus->armadaOverlayWindow->opacity' "$ROOT/packages/gamescope/patches/0028-steamcompmgr-armada-virtual-trackpad-overlay.patch"
 python3 "$ROOT/tests/virtual-trackpads-haptics-test.py"
+python3 "$ROOT/tests/virtual-trackpads-lifecycle-test.py"
 ! grep -Fq '<VirtualTrackpadOverlay' "$ROOT/decky/armada-control/src/Content.tsx"
-grep -Fq 'systemctl --global enable armada-virtual-trackpads-overlay.service' "$ROOT/build_files/40-vendor-system-files.sh"

@@ -1,13 +1,12 @@
 import { toaster } from "@decky/api";
-import { ButtonItem, Field, PanelSection } from "@decky/ui";
+import { ButtonItem, Field, PanelSection, showModal } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getVirtualTrackpads, resetVirtualTrackpads, setVirtualTrackpads } from "../backend";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
-import { t } from "../i18n";
-import type { Config, VirtualTrackpadsConfig } from "../types";
-
-type EditableTrackpads = Omit<VirtualTrackpadsConfig, "supported">;
+import { TrackpadShortcutModal } from "../components/TrackpadShortcutModal";
+import { trackpadText as t } from "../lib/trackpadText";
+import type { Config, EditableTrackpadsConfig } from "../types";
 
 export function Trackpads({ config, setConfig }: {
   config: Config;
@@ -16,6 +15,9 @@ export function Trackpads({ config, setConfig }: {
   const timer = useRef<number | null>(null);
   const request = useRef(Promise.resolve());
   const pendingSaves = useRef(0);
+  const editRevision = useRef(0);
+  const latestPads = useRef(config.virtualTrackpads);
+  latestPads.current = config.virtualTrackpads;
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => () => {
@@ -34,7 +36,9 @@ export function Trackpads({ config, setConfig }: {
               current.virtualTrackpads.enabled === latest.enabled &&
               current.virtualTrackpads.blockTouchscreen === latest.blockTouchscreen &&
               current.virtualTrackpads.leftEnabled === latest.leftEnabled &&
-              current.virtualTrackpads.rightEnabled === latest.rightEnabled
+              current.virtualTrackpads.rightEnabled === latest.rightEnabled &&
+              current.virtualTrackpads.screen === latest.screen &&
+              current.virtualTrackpads.secondaryAvailable === latest.secondaryAvailable
             )) return current;
             return { ...current, virtualTrackpads: { ...current.virtualTrackpads, ...latest } };
           });
@@ -45,28 +49,48 @@ export function Trackpads({ config, setConfig }: {
     return () => { cancelled = true; window.clearInterval(interval); };
   }, [setConfig]);
 
-  const update = (change: Partial<EditableTrackpads>, immediate = false) => {
-    const next = { ...config.virtualTrackpads, ...change };
+  const refreshAfterError = async (revision: number) => {
+    if (editRevision.current !== revision) return;
+    try {
+      const confirmed = await getVirtualTrackpads();
+      if (editRevision.current !== revision) return;
+      latestPads.current = confirmed;
+      setConfig((current) => current && editRevision.current === revision
+        ? { ...current, virtualTrackpads: confirmed } : current);
+    } catch (_) { /* Keep the draft if the server cannot confirm its state. */ }
+  };
+
+  const update = (change: Partial<EditableTrackpadsConfig>, immediate = false) => {
+    const revision = ++editRevision.current;
+    // A shortcut may toggle the feature while its settings dialog is open.
+    // Save the edited buttons against the latest state, not the modal's snapshot.
+    const next = { ...latestPads.current, ...change };
+    latestPads.current = next;
     setConfig((current) => current ? { ...current, virtualTrackpads: next } : current);
     window.dispatchEvent(new Event("armada-trackpads-preview"));
     if (timer.current !== null) window.clearTimeout(timer.current);
     const save = () => {
       timer.current = null;
-      const { supported: _supported, ...payload } = next;
+      const { supported: _supported, secondaryAvailable: _secondaryAvailable, ...payload } = next;
       pendingSaves.current += 1;
       request.current = request.current
         .catch(() => {})
         .then(async () => {
           const applied = await setVirtualTrackpads(payload);
           const { controllerType, ...trackpads } = applied;
+          // Older acknowledgements must not overwrite a newer toggle or draft.
+          if (editRevision.current !== revision) return;
           setConfig((current) => current ? {
             ...current,
             controllerType: controllerType || current.controllerType,
-            virtualTrackpads: { ...current.virtualTrackpads, ...trackpads, supported: true },
+            virtualTrackpads: editRevision.current === revision
+              ? { ...current.virtualTrackpads, ...trackpads, supported: true }
+              : current.virtualTrackpads,
           } : current);
         })
-        .catch((error) => {
+        .catch(async (error) => {
           toaster.toast({ title: t("trackpads.saveError"), body: String(error) });
+          await refreshAfterError(revision);
         })
         .finally(() => { pendingSaves.current -= 1; });
     };
@@ -75,6 +99,7 @@ export function Trackpads({ config, setConfig }: {
 
   const resetDefaults = () => {
     if (resetting) return;
+    const revision = ++editRevision.current;
     if (timer.current !== null) {
       window.clearTimeout(timer.current);
       timer.current = null;
@@ -86,15 +111,19 @@ export function Trackpads({ config, setConfig }: {
       .then(async () => {
         const applied = await resetVirtualTrackpads();
         const { controllerType, ...trackpads } = applied;
+        if (editRevision.current !== revision) return;
         setConfig((current) => current ? {
           ...current,
           controllerType: controllerType || current.controllerType,
-          virtualTrackpads: { ...current.virtualTrackpads, ...trackpads, supported: true },
+          virtualTrackpads: editRevision.current === revision
+            ? { ...current.virtualTrackpads, ...trackpads, supported: true }
+            : current.virtualTrackpads,
         } : current);
         window.dispatchEvent(new Event("armada-trackpads-preview"));
       })
-      .catch((error) => {
+      .catch(async (error) => {
         toaster.toast({ title: t("trackpads.saveError"), body: String(error) });
+        await refreshAfterError(revision);
       })
       .finally(() => {
         pendingSaves.current -= 1;
@@ -113,7 +142,7 @@ export function Trackpads({ config, setConfig }: {
     | "trackpads.modeFloatingDescription"
     | "trackpads.modeHalvesDescription");
   const deckControllerSelected = config.controllerType === "deck-uhid";
-  const settingsDisabled = !pads.enabled;
+  const settingsDisabled = !pads.enabled || resetting;
   const controlsDisabled = settingsDisabled || splitScreen;
   const visualDisabled = controlsDisabled;
   const centerDotDisabled = visualDisabled || pads.mode === "floating";
@@ -122,9 +151,9 @@ export function Trackpads({ config, setConfig }: {
       <PanelSection title={t("trackpads.title")}>
         <ToggleRow
           label={t("trackpads.master")}
-          description={t("trackpads.masterDescription")}
+          description={deckControllerSelected ? t("trackpads.masterDescription") : t("trackpads.selectDeckFirst")}
           value={pads.enabled}
-          disabled={!deckControllerSelected}
+          disabled={!deckControllerSelected || resetting}
           onChange={(enabled) => update(enabled && !pads.leftEnabled && !pads.rightEnabled
             ? { enabled, blockTouchscreen: false, leftEnabled: true, rightEnabled: true }
             : { enabled, ...(enabled ? { blockTouchscreen: false } : {}) }, true)}
@@ -133,6 +162,7 @@ export function Trackpads({ config, setConfig }: {
           label={t("trackpads.blockTouchscreen")}
           description={t("trackpads.blockTouchscreenDescription")}
           value={pads.blockTouchscreen}
+          disabled={resetting}
           onChange={(blockTouchscreen) => update(blockTouchscreen
             ? { blockTouchscreen, enabled: false }
             : { blockTouchscreen }, true)}
@@ -141,6 +171,7 @@ export function Trackpads({ config, setConfig }: {
           label={t("trackpads.gameModeOnly")}
           description={t("trackpads.gameModeOnlyDescription")}
           value={pads.gameModeOnly}
+          disabled={resetting}
           onChange={(gameModeOnly) => update({ gameModeOnly }, true)}
         />
         <SelectEdit
@@ -159,6 +190,71 @@ export function Trackpads({ config, setConfig }: {
         />
         <div className="armada-trackpads-note">{modeDescription}</div>
         {splitScreen && <div className="armada-trackpads-note">{t("trackpads.halvesInvisible")}</div>}
+      </PanelSection>
+      <PanelSection title={t("trackpads.shortcut")}>
+        <ToggleRow
+          label={t("trackpads.shortcutEnabled")}
+          value={pads.shortcutEnabled}
+          disabled={resetting}
+          description={t("trackpads.shortcutDescription")}
+          onChange={(shortcutEnabled) => update({ shortcutEnabled }, true)}
+        />
+        <ButtonItem
+          layout="below"
+          label={t("trackpads.shortcutButtons")}
+          disabled={!pads.shortcutEnabled || resetting}
+          onClick={() => showModal(<TrackpadShortcutModal
+            initial={pads.shortcutButtons}
+            onSave={(shortcutButtons) => update({ shortcutButtons }, true)}
+          />)}
+        >
+          {pads.shortcutButtons.join(" + ")}
+        </ButtonItem>
+        <SelectEdit
+          label={t("trackpads.shortcutActivation")}
+          value={String(pads.shortcutHoldSeconds)}
+          disabled={!pads.shortcutEnabled || resetting}
+          options={[
+            { data: "0", label: t("trackpads.shortcutImmediate") },
+            { data: "3", label: t("trackpads.shortcutHold") },
+          ]}
+          onChange={(duration) => update({ shortcutHoldSeconds: duration === "0" ? 0 : 3 }, true)}
+        />
+      </PanelSection>
+      <PanelSection title={t("trackpads.touchscreen")}>
+        {pads.secondaryAvailable && <>
+          <SelectEdit
+            label={t("trackpads.screen")}
+            value={pads.screen}
+            disabled={resetting}
+            options={[
+              { data: "primary", label: t("trackpads.screenPrimary") },
+              { data: "secondary", label: t("trackpads.screenSecondary") },
+            ]}
+            onChange={(screen) => update({ screen }, true)}
+          />
+          <div className="armada-trackpads-note">{t("trackpads.screenDescription")}</div>
+        </>}
+        <SelectEdit
+          label={t("trackpads.touchRotation")}
+          value={pads.touchRotation}
+          disabled={resetting}
+          options={[
+            { data: "normal", label: t("trackpads.rotationNormal") },
+            { data: "right", label: t("trackpads.rotationRight") },
+            { data: "upside_down", label: t("trackpads.rotationInverted") },
+            { data: "left", label: t("trackpads.rotationLeft") },
+          ]}
+          onChange={(touchRotation) => update({ touchRotation }, true)}
+        />
+        <div className="armada-trackpads-note">{t("trackpads.rotationDescription")}</div>
+        <ToggleRow
+          label={t("trackpads.touchMirror")}
+          description={t("trackpads.touchMirrorDescription")}
+          value={pads.touchMirror}
+          disabled={resetting}
+          onChange={(touchMirror) => update({ touchMirror }, true)}
+        />
       </PanelSection>
       <PanelSection title={t("trackpads.zones")}>
         <ToggleRow
@@ -181,15 +277,8 @@ export function Trackpads({ config, setConfig }: {
           min={15}
           max={80}
           step={1}
-          disabled={controlsDisabled || pads.deckLikeSize}
-          onChange={(size) => update({ leftSize: size, rightSize: size })}
-        />
-        <ToggleRow
-          label={t("trackpads.deckLikeSize")}
-          description={t("trackpads.deckLikeSizeDescription")}
-          value={pads.deckLikeSize}
           disabled={controlsDisabled}
-          onChange={(deckLikeSize) => update({ deckLikeSize }, true)}
+          onChange={(size) => update({ leftSize: size, rightSize: size })}
         />
         <SliderEdit
           label={t("trackpads.edgeGap")}
