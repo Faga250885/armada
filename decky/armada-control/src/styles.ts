@@ -6,10 +6,12 @@ export const styles = `
         width: 100%;
         max-width: 100%;
         min-width: 0;
+        min-height: 0;
         position: relative;
         margin-top: -12px;
         box-sizing: border-box;
       }
+      .armada-control-tabs > div,
       .armada-control-tabs .${gamepadTabbedPageClasses.GamepadTabbedPage} {
         height: 100%;
         min-height: 0;
@@ -18,6 +20,10 @@ export const styles = `
         background: #0D141C;
         box-shadow: none;
         backdrop-filter: none;
+      }
+      .armada-control-tabs .${gamepadTabbedPageClasses.TabContents},
+      .armada-control-tabs .armada-control-tab-content {
+        min-width: 0;
       }
       .armada-control-tabs [role="tabpanel"],
       .armada-control-tabs .${gamepadTabbedPageClasses.TabContentsScroll} {
@@ -46,9 +52,9 @@ export const styles = `
         flex: 0 1 auto;
         min-width: 0;
         box-sizing: border-box;
-        padding-left: 6px !important;
-        padding-right: 6px !important;
-        display: flex !important;
+        padding-left: 6px;
+        padding-right: 6px;
+        display: flex;
         align-items: center;
         justify-content: center;
       }
@@ -199,7 +205,7 @@ export const styles = `
         opacity: 1;
       }
       .armada-control-tabs .armada-advanced-group {
-        margin-left: 6px;
+        margin: 0 8px;
         padding-left: 6px;
       }
       .armada-control-tabs .armada-reset-row {
@@ -241,17 +247,9 @@ export const styles = `
       .afc-scope .afc-reset-row {
         padding: 0 14px 8px;
       }
-      .afc-scope .afc-control-inset {
-        box-sizing: border-box;
-        width: 100%;
+      .armada-control-panel-content,
+      .afc-scope .armada-control-panel-content {
         padding: 0 8px;
-      }
-      .afc-scope .afc-control-inset > * {
-        min-width: 0;
-        max-width: 100%;
-      }
-      .afc-scope .afc-control-inset button {
-        width: 100% !important;
       }
       .afc-scope .afc-error {
         box-sizing: border-box;
@@ -261,32 +259,6 @@ export const styles = `
         line-height: 16px;
         color: #ff6b6b;
       }
-      /* Unscoped: DialogFooter is a sibling of DialogBody, not a descendant. */
-      .afc-modal-footer {
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 8px;
-      }
-      .afc-modal-footer-row {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: nowrap;
-        gap: 8px;
-        width: 100%;
-      }
-      .afc-modal-footer-half {
-        flex: 1;
-        min-width: 0;
-      }
-      .afc-modal-footer-full {
-        width: 100%;
-      }
-      .afc-scope .afc-modal-title {
-        margin: 0;
-        padding: 4px 0 10px;
-        font-size: 20px;
-        font-weight: 600;
-      }
       .afc-scope .afc-modal-error {
         box-sizing: border-box;
         width: 100%;
@@ -295,14 +267,16 @@ export const styles = `
         line-height: 16px;
         color: #ff6b6b;
       }
-      .afc-scope .afc-slider-field {
-        width: 100%;
-        max-width: none;
-        overflow: hidden;
+      .armada-control-dialog-footer {
+        display: flex;
+        flex-direction: row;
+        gap: 8px;
       }
-      .afc-scope .afc-slider-field * {
-        min-width: 0 !important;
-        max-width: 100% !important;
+      .armada-control-dialog-footer > button {
+        flex: 1 1 0;
+        min-width: 0;
+        width: auto;
+        margin: 0;
       }
       .afc-scope .afc-graph-focusable {
         display: block;
@@ -345,13 +319,13 @@ export const styles = `
         width: 40px;
       }
       .afc-scope .afc-point-row-header button {
-        min-width: 0 !important;
-        max-width: 100% !important;
+        min-width: 0;
+        max-width: 100%;
       }
       .afc-scope .afc-point-row-header > *:last-child button {
-        width: 100% !important;
-        padding-left: 0 !important;
-        padding-right: 0 !important;
+        width: 100%;
+        padding-left: 0;
+        padding-right: 0;
       }
       .afc-scope .afc-collapse {
         overflow: hidden;
@@ -369,19 +343,5 @@ export const styles = `
         font-size: 11px;
         line-height: 15px;
         color: #ffd166;
-      }
-      .afc-scope .afc-min-warning-button {
-        border-left: 2px solid rgba(255, 209, 102, 0.6);
-        background: rgba(255, 209, 102, 0.08);
-        border-radius: 4px;
-      }
-      .afc-scope .afc-min-warning-hidden {
-        display: none;
-      }
-      .afc-scope button:disabled,
-      .afc-scope button[disabled] {
-        opacity: 0.35 !important;
-        filter: grayscale(70%) !important;
-        cursor: not-allowed !important;
       }
     `;

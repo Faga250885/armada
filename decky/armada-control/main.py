@@ -16,13 +16,20 @@ from armada_control.steam import compat_mapped_appids, installed_games
 from armada_control.system import (
     bottom_screen_active,
     reapply_perf,
+    panel_calibration,
+    panel_rate,
+    calibrate_panel,
+    save_panel,
+    set_panel,
+    step_panel,
     restart_game_mode,
-    set_abl_auto_enabled,
     set_bottom_screen_brightness,
     set_bottom_screen_enabled,
+    set_companion_locked,
     get_sleep_logs_enabled,
     set_mtp_enabled,
     set_desktop_mode,
+    set_gyro_enabled,
     set_sleep_mode,
     set_sleep_logs_enabled,
     set_ssh_enabled,
@@ -65,17 +72,38 @@ class Plugin:
     async def set_ssh_enabled(self, enabled):
         return await asyncio.to_thread(set_ssh_enabled, enabled)
 
+    async def set_gyro_enabled(self, enabled):
+        return await asyncio.to_thread(set_gyro_enabled, enabled)
+
     async def set_mtp_enabled(self, enabled):
         return await asyncio.to_thread(set_mtp_enabled, enabled)
 
-    async def set_abl_auto_enabled(self, enabled):
-        return await asyncio.to_thread(set_abl_auto_enabled, enabled)
+    async def get_panel_calibration(self):
+        return await asyncio.to_thread(panel_calibration)
+
+    async def get_panel_rate(self):
+        return await asyncio.to_thread(panel_rate)
+
+    async def calibrate_panel(self):
+        return await asyncio.to_thread(calibrate_panel)
+
+    async def step_panel(self, attr, direction):
+        return await asyncio.to_thread(step_panel, attr, direction)
+
+    async def set_panel(self, attr, value):
+        return await asyncio.to_thread(set_panel, attr, value)
+
+    async def save_panel(self, attr):
+        return await asyncio.to_thread(save_panel, attr)
 
     async def set_bottom_screen_enabled(self, enabled):
         return await asyncio.to_thread(set_bottom_screen_enabled, enabled)
 
     async def set_bottom_screen_brightness(self, brightness):
         return await asyncio.to_thread(set_bottom_screen_brightness, brightness)
+
+    async def set_companion_locked(self, locked):
+        return await asyncio.to_thread(set_companion_locked, locked)
 
     async def get_bottom_screen_active(self):
         return await asyncio.to_thread(bottom_screen_active)

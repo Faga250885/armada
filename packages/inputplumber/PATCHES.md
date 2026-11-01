@@ -8,14 +8,20 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0002-fix-force-feedback-reset-effects-when-replacing-targets.patch`
   source: armada
-- `patches/0003-feat-Hardware-Support-Add-AYN-Thor-Lite.patch`
-  source: https://github.com/ShadowBlip/InputPlumber/pull/746
-  notes: AYN Thor Lite support
-- `patches/0004-fix-AyaneoHaptics-sleep-between-polls.patch`
+- `patches/0004-fix-Hardware-Support-KONKR-Pocket-FIT-MCU-system-buttons.patch`
   source: armada
-- `patches/0005-add-dbus-touch-events.patch`
+- `patches/0005-feat-ssc-qualcomm-sensor-core-support.patch`
+  source: https://github.com/ShadowBlip/InputPlumber/pull/590/commits/3caa7902d92e49b86fed567df61a0677304ae8bf
+  notes: Adds the FastRPCDevice.Id polkit action and the INPUTPLUMBER_FASTRPC opt-in, fixes scaling, polling, opening, library loading and sample rate, and moves the driver to the 0.83 pattern.
+- `patches/0006-feat-ssc-gyro-auto-calibration.patch`
+  source: armada
+- `patches/0007-feat-ssc-device-enablement.patch`
+  source: armada
+- `patches/0008-feat-ssc-suspend-source-devices-across-system-sleep.patch`
+  source: armada
+- `patches/0009-add-dbus-touch-events.patch`
   source: armada
   notes: Adds a polkit-protected D-Bus method for injecting normalized multitouch values into Steam Deck touchpad targets.
-- `patches/0006-native-virtual-trackpad-haptics.patch`
+- `patches/0010-native-virtual-trackpad-haptics.patch`
   source: armada
   notes: Uses Steam's native trackpad pulse timing with configurable amplitude and short finite effects while the virtual-pad service holds a live lease. Zero suppresses trackpad pulses without stopping game rumble, which has priority in the shared effect slot. Includes six package tests for scaling, fade, mute, game-rumble priority and lease expiry.

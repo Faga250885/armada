@@ -39,7 +39,7 @@ on:
 env:
   IMAGE_NAME: ${{ github.event.repository.name }}
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder:latest"
+  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b"
   R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
   R2_BUCKET: ${{ vars.R2_BUCKET }}
   R2_PREFIX: ${{ inputs.channel || 'preview' }}
@@ -168,7 +168,7 @@ jobs:
 
       - name: Upload disk image to GitHub artifacts
         if: ${{ !inputs.publish_r2 }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: armada-disk-image
           path: |

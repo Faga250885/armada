@@ -54,7 +54,20 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0026-upscale-use-sgsr-for-sdr-fsr-requests.patch`
   source: armada
-- `patches/0027-steamcompmgr-elapsed-time-fps-limiter.patch`
+- `patches/0029-drm-mirror-internal-screen-sleep-to-the-lease-companion.patch`
+  source: armada
+- `patches/0030-drm-lock-the-lease-companion-with-the-broker.patch`
+  source: armada
+- `patches/0031-drm-wait-for-the-lock-state-before-lighting-the-companion.patch`
+  source: armada
+- `patches/0032-steamcompmgr-use-the-exact-rate-for-refresh-only-requests.patch`
+  source: armada
+
+- `patches/0033-steamcompmgr-optional-blank-overlay-placeholder.patch`
+  source: armada
+  notes: Context refreshed for the repeat-frame argument on the current Gamescope base; behaviour unchanged.
+
+- `patches/0034-vulkan-allow-linear-composition-output.patch`
   source: armada
 - `patches/0028-steamcompmgr-armada-virtual-trackpad-overlay.patch`
   source: armada

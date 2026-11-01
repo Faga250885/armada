@@ -1,6 +1,6 @@
 export image_name := env("IMAGE_NAME", "armada")
 export default_tag := env("DEFAULT_TAG", "latest")
-export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
+export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b")
 
 import? 'Justfile.local'
 
@@ -296,7 +296,7 @@ build-armada-image $target_image=("localhost/" + image_name) $tag=default_tag: (
     if [[ -n "$version" && "$version" != unknown ]]; then
         export OUT="output/armada-${version}.img.gz"
     fi
-    ./post_process/finalize-armada-image.sh output/image/disk.raw
+    ./post_process/finalize-armada-image.sh output/image/disk.raw "${target_image}:${tag}"
 
 [group('Build Virtual Machine Image')]
 rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "qcow2" "disk_config/disk.toml")
